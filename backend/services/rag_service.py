@@ -29,9 +29,25 @@ if OPENAI_API_KEY:
 if GOOGLE_API_KEY:
     os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
 
-# ── Globals ──────────────────────────────────────────────────────────
+# ── Globals & Prompts ────────────────────────────────────────────────
 _embeddings = None
 _vector_store: FAISS | None = None
+
+DEFAULT_RAG_PROMPT = """You are an expert insurance policy assistant. Answer the user's question using ONLY the provided policy excerpts.
+
+RULES:
+1. Start with a direct "🧠 **AI Answer:**" section. Be highly concise.
+2. If asking for specific details (like name, number, date), use structured fields (e.g., Policy Name: X).
+3. **Bold** key numbers, amounts, and limits.
+4. Keep the answer under visually 2 lines. Do NOT write paragraphs.
+5. If unsure, state that the information is missing from the provided documents.
+
+Context:
+{context}
+
+Question: {question}
+
+Answer:"""
 
 class MockEmbeddings:
     """Mock embeddings for when no internet is available."""
@@ -127,7 +143,7 @@ def _is_rate_limit_error(e: Exception) -> bool:
     ])
 
 
-def _try_llm_chain(context: str, question: str) -> str | None:
+def _try_llm_chain(context: str, question: str, prompt_template: str | None = None) -> str | None:
     """
     Try each LLM in the chain in order.
     Returns answer string or None if all fail.
@@ -135,23 +151,8 @@ def _try_llm_chain(context: str, question: str) -> str | None:
     from langchain_core.prompts import PromptTemplate # pyre-ignore
     from langchain_core.output_parsers import StrOutputParser # pyre-ignore
 
-    prompt_template = """You are an expert insurance policy assistant. Answer the user's question using ONLY the provided policy excerpts.
-
-RULES:
-1. Start with a direct "🧠 **AI Answer:**" section. Be highly concise.
-2. If asking for specific details (like name, number, date), use structured fields (e.g., Policy Name: X).
-3. **Bold** key numbers, amounts, and limits.
-4. Keep the answer under visually 2 lines. Do NOT write paragraphs.
-5. If unsure, state that the information is missing from the provided documents.
-
-Context:
-{context}
-
-Question: {question}
-
-Answer:"""
-
-    prompt = PromptTemplate.from_template(prompt_template)
+    template = prompt_template or DEFAULT_RAG_PROMPT
+    prompt = PromptTemplate.from_template(template)
 
     for provider in _build_llm_chain():
         name = provider["name"]
