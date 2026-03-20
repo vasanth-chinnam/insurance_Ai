@@ -1,0 +1,5 @@
+/* App-specific overrides if needed — base styles are in index.css */
+
+.text-primary {
+  color: var(--primary);
+}
