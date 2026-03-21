@@ -659,3 +659,287 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* ── Phase 2: Motor Claims UI ────────────────────────────────── */
+.claims-form-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.claims-content {
+  max-width: 800px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 2rem 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.premium-form {
+  background: var(--white);
+  padding: 2.5rem;
+  border-radius: 24px;
+  box-shadow: 0 10px 40px -10px rgba(0,0,0,0.08);
+  border: 1px solid var(--border);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-group label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.form-group input,
+.form-group textarea {
+  padding: 0.75rem 1rem;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  font-size: 0.95rem;
+  outline: none;
+  transition: all 0.2s;
+  background: #f8fafc;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  border-color: var(--primary);
+  background: var(--white);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+}
+
+.upload-zone {
+  border: 2px dashed #cbd5e1;
+  border-radius: 16px;
+  padding: 3rem 2rem;
+  text-align: center;
+  cursor: pointer;
+  background: #f8fafc;
+  transition: all 0.2s;
+  margin-bottom: 2rem;
+}
+
+.upload-zone:hover {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+.upload-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--text-muted);
+}
+
+.upload-prompt svg {
+  color: #94a3b8;
+}
+
+.upload-prompt p {
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.upload-prompt span {
+  font-size: 0.8rem;
+}
+
+.upload-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.image-preview {
+  width: 100%;
+  max-width: 300px;
+  height: 200px;
+  border-radius: 12px;
+  background-size: cover;
+  background-position: center;
+  box-shadow: var(--shadow-lg);
+}
+
+.btn-submit {
+  width: 100%;
+  padding: 1rem;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+}
+
+.btn-submit:hover:not(:disabled) {
+  background: var(--primary-dark);
+  transform: translateY(-2px);
+}
+
+.btn-submit:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.claim-result {
+  background: var(--white);
+  padding: 2.5rem;
+  border-radius: 24px;
+  box-shadow: 0 20px 50px -15px rgba(0,0,0,0.1);
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+.claim-result::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: linear-gradient(to right, #10b981, #3b82f6);
+}
+
+.claim-result h2 {
+  text-align: center;
+  font-size: 1.75rem;
+  margin-bottom: 2rem;
+  color: #0f172a;
+}
+
+.alert-degraded {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  padding: 1rem;
+  border-radius: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 2rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.receipt-details {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.receipt-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 1rem;
+  border-bottom: 1px dashed var(--border);
+}
+
+.receipt-row:last-child {
+  border-bottom: none;
+}
+
+.parts-header {
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 1.1rem;
+  color: var(--text-muted);
+}
+
+.parts-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: #f8fafc;
+  padding: 1.5rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+.parts-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--white);
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.part-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.part-name {
+  font-weight: 600;
+  min-width: 100px;
+}
+
+.repair-type {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.severity-badge {
+  font-size: 0.7rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.severity-badge.minor { background: #fef3c7; color: #b45309; }
+.severity-badge.moderate { background: #ffedd5; color: #c2410c; }
+.severity-badge.severe { background: #fee2e2; color: #b91c1c; }
+
+.receipt-totals {
+  margin-top: 2rem;
+  background: #f8fafc;
+  padding: 1.5rem;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.receipt-totals .receipt-row {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.text-lg { font-size: 1.1rem; }
+.text-xl { font-size: 1.3rem; }
+.text-muted { color: var(--text-muted); }
+.text-primary { color: var(--primary); }
+.mt-2 { margin-top: 0.5rem; }
+.pt-2 { padding-top: 0.5rem; }
+.border-t { border-top: 1px solid #cbd5e1; }
+

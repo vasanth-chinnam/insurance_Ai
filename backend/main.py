@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from backend.routes.chat_routes import router as chat_router
+from backend.routes.claims_routes import router as claims_router
 from backend.services.rag_service import ingest_file
 from backend.config import POLICIES_DIR
 
@@ -44,6 +45,7 @@ app.add_middleware(
 
 # ── Routers ──────────────────────────────────────────────────────────
 app.include_router(chat_router)
+app.include_router(claims_router)
 
 
 @app.get("/")

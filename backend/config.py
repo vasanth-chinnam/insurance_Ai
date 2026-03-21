@@ -24,3 +24,17 @@ EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 CHAT_MODEL_OPENAI = "gpt-3.5-turbo"
 CHAT_MODEL_GEMINI = "gemini-2.0-flash"
 RETRIEVER_K = 4
+
+# ── Phase 2: Motor Claims ─────────────────────────────────────────
+# Vision model for damage photo analysis (free tier)
+VISION_MODEL         = "gemini-2.0-flash"
+
+# Where uploaded claim photos and PDFs are saved
+CLAIMS_UPLOAD_DIR    = os.path.join("uploads", "claims")
+
+# Standard deductible % applied to all motor claims
+# Can be overridden per policy via RAG context
+MOTOR_DEDUCTIBLE_PCT = float(os.getenv("MOTOR_DEDUCTIBLE_PCT", "0.10"))  # 10%
+
+# Max image size allowed for upload (in MB)
+MAX_IMAGE_SIZE_MB    = int(os.getenv("MAX_IMAGE_SIZE_MB", "10"))
