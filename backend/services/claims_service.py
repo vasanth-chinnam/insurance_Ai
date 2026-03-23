@@ -1,4 +1,5 @@
 import json
+import re
 import logging
 import base64
 from pathlib import Path
@@ -142,18 +143,23 @@ def _parse_claim_response(raw_json: str, claim: ClaimRequest) -> ClaimResponse:
 # ── Rule-based fallback estimator ─────────────────────────────────
 # Indian market average repair costs (INR)
 PART_COST_MAP = {
-    "bumper":       {"minor": 3000,  "moderate": 8500,  "severe": 15000},
-    "hood":         {"minor": 4000,  "moderate": 12000, "severe": 22000},
-    "door":         {"minor": 3500,  "moderate": 10000, "severe": 18000},
-    "headlight":    {"minor": 2000,  "moderate": 5000,  "severe": 9000},
-    "taillight":    {"minor": 1500,  "moderate": 4000,  "severe": 7000},
-    "windshield":   {"minor": 3000,  "moderate": 8000,  "severe": 14000},
-    "fender":       {"minor": 3000,  "moderate": 9000,  "severe": 16000},
-    "roof":         {"minor": 4000,  "moderate": 13000, "severe": 24000},
-    "tyre":         {"minor": 2000,  "moderate": 5000,  "severe": 8000},
-    "mirror":       {"minor": 800,   "moderate": 2000,  "severe": 4000},
-    "trunk":        {"minor": 3000,  "moderate": 9000,  "severe": 16000},
-    "radiator":     {"minor": 4000,  "moderate": 11000, "severe": 20000},
+    "bumper":       {"minor": 3000,  "moderate": 8500,  "severe": 22000},
+    "hood":         {"minor": 4000,  "moderate": 12000, "severe": 35000},
+    "door":         {"minor": 3500,  "moderate": 10000, "severe": 25000},
+    "headlight":    {"minor": 2500,  "moderate": 7500,  "severe": 18000},
+    "taillight":    {"minor": 1500,  "moderate": 4500,  "severe": 12000},
+    "windshield":   {"minor": 3000,  "moderate": 10000, "severe": 22000},
+    "fender":       {"minor": 3000,  "moderate": 9000,  "severe": 20000},
+    "roof":         {"minor": 5000,  "moderate": 15000, "severe": 45000},
+    "tyre":         {"minor": 2000,  "moderate": 6000,  "severe": 10000},
+    "wheel":        {"minor": 4000,  "moderate": 12000, "severe": 25000},
+    "mirror":       {"minor": 1200,  "moderate": 3500,  "severe": 8000},
+    "trunk":        {"minor": 3500,  "moderate": 10000, "severe": 25000},
+    "radiator":     {"minor": 5000,  "moderate": 12000, "severe": 25000},
+    "grill":        {"minor": 2500,  "moderate": 8000,  "severe": 15000},
+    "grille":       {"minor": 2500,  "moderate": 8000,  "severe": 15000},
+    "chassis":      {"minor": 15000, "moderate": 45000, "severe": 95000},
+    "suspension":   {"minor": 6000,  "moderate": 18000, "severe": 40000},
 }
 
 DEFAULT_PART_COST = {"minor": 2000, "moderate": 6000, "severe": 12000}
@@ -185,19 +191,25 @@ def _extract_damages_from_vision(
         if not line.strip() or "damaged parts" in line:
             continue
 
-        if "severe" in line.lower():
+        l_line = line.lower()
+        # Better severity detection
+        if any(w in l_line for w in ["severe", "smashed", "destroyed", "replacement", "missing", "totaled"]):
             severity_key = "severe"
-        elif "moderate" in line.lower():
+        elif any(w in l_line for w in ["moderate", "cracked", "bent", "dent", "broken", "leaking"]):
             severity_key = "moderate"
+        elif any(w in l_line for w in ["minor", "scratch", "surface", "light", "paint"]):
+            severity_key = "minor"
         else:
             severity_key = "minor"
 
         repair_type = "Replace" if any(
-            w in line.lower() for w in ["replace", "replacement", "severe"]
+            w in l_line for w in ["replace", "replacement", "severe", "smashed", "missing"]
         ) else "Repair"
 
         for part_key in PART_COST_MAP:
-            if part_key in line.lower() and part_key not in matched_keys:
+            # Match part name as a whole word or at least at the start/end of a line
+            # We use a mix of regex and simple containment check for robustness
+            if part_key in l_line and part_key not in matched_keys:
                 cost = float(PART_COST_MAP[part_key][severity_key])
                 severity = _get_severity_from_cost(cost)
                 damages.append(DamageDetail(
@@ -321,4 +333,27 @@ def process_motor_claim(claim: ClaimRequest, image_path: str) -> ClaimResponse:
 
     result.detected_area = detected_area
     result.image_analysis = image_analysis
+
+    # ── Phase 3: Auto fraud check after claim estimation ─────────
+    try:
+        from backend.services.fraud_detector import detect_fraud
+
+        fraud_input = {
+            "claim_type":          "motor",
+            "policy_number":       claim.policy_number,
+            "claim_amount":        result.total_repair_estimate,
+            "days_after_incident": 0,
+            "previous_claims":     0,
+            "incident_date":       claim.incident_date,
+            "description":         claim.incident_description,
+        }
+        result.fraud_check = detect_fraud(fraud_input)
+        logger.info(
+            "Auto fraud check: score=%d verdict=%s",
+            result.fraud_check["fraud_score"],
+            result.fraud_check["verdict"],
+        )
+    except Exception as e:
+        logger.warning("Auto fraud check failed: %s", str(e)[:100])
+
     return result

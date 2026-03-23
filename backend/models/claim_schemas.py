@@ -33,3 +33,4 @@ class ClaimResponse(BaseModel):
     notes: Optional[str] = None       # caveats from the LLM
     detected_area: Optional[str] = None       # "Front area"
     image_analysis: Optional[str] = None      # vision summary
+    fraud_check: Optional[dict] = None        # Phase 3 auto fraud check result

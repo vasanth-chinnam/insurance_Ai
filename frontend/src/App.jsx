@@ -14,6 +14,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion'
 import PolicyChat from './components/PolicyChat'
 import MotorClaimsForm from './components/MotorClaimsForm'
+import FraudDetection from './components/FraudDetection'
 import './App.css'
 
 const API_BASE = 'http://127.0.0.1:8000/api'
@@ -21,7 +22,7 @@ const API_BASE = 'http://127.0.0.1:8000/api'
 const NAV_ITEMS = [
   { id: 'policy_rag', icon: Stethoscope, label: 'Policy Q&A', badge: 'Live', phase: null },
   { id: 'motor_claim', icon: Car, label: 'Motor Claims', badge: 'Live', phase: 2 },
-  { id: 'fraud_detection', icon: Search, label: 'Fraud Detection', badge: 'Phase 3', phase: 3 },
+  { id: 'fraud_detection', icon: Search, label: 'Fraud Detection', badge: 'Live', phase: 3 },
   { id: 'risk_profiler', icon: BarChart3, label: 'Risk Profiler', badge: 'Phase 4', phase: 4 },
   { id: 'crop_payout', icon: Leaf, label: 'Crop Insurance', badge: 'Phase 5', phase: 5 },
   { id: 'renewal_agent', icon: RefreshCcw, label: 'Renewal Compare', badge: 'Phase 6', phase: 6 },
@@ -56,9 +57,9 @@ function App() {
             return (
               <div
                 key={item.id}
-                className={`nav-item ${activeNav === item.id ? 'active' : ''} ${item.phase && item.phase > 2 ? 'disabled' : ''}`}
+                className={`nav-item ${activeNav === item.id ? 'active' : ''} ${item.phase && item.phase > 3 ? 'disabled' : ''}`}
                 onClick={() => { 
-                  if (!item.phase || item.phase <= 2) {
+                  if (!item.phase || item.phase <= 3) {
                     setActiveNav(item.id)
                     setSidebarOpen(false)
                   } else {
@@ -101,6 +102,12 @@ function App() {
           <MotorClaimsForm 
             API_BASE={API_BASE} 
             showToast={showToast} 
+          />
+        )}
+
+        {activeNav === 'fraud_detection' && (
+          <FraudDetection
+            showToast={showToast}
           />
         )}
       </main>
