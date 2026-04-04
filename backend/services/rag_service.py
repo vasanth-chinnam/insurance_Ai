@@ -3,44 +3,50 @@ import re
 import logging
 from pathlib import Path
 
-from langchain_community.document_loaders import PyPDFLoader, TextLoader # pyre-ignore
-from langchain_text_splitters import RecursiveCharacterTextSplitter # pyre-ignore
-from langchain_huggingface import HuggingFaceEmbeddings # pyre-ignore
-from langchain_community.vectorstores import FAISS # pyre-ignore
+from langchain_community.document_loaders import PyPDFLoader, TextLoader  # pyre-ignore
+from langchain_text_splitters import RecursiveCharacterTextSplitter  # pyre-ignore
+from langchain_huggingface import HuggingFaceEmbeddings  # pyre-ignore
+from qdrant_client import QdrantClient
+from qdrant_client.models import (
+    Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
+)
 
-from backend.config import ( # pyre-ignore
+from backend.config import (  # pyre-ignore
     OPENAI_API_KEY,
     GOOGLE_API_KEY,
     LLM_PROVIDER,
-    VECTOR_STORE_PATH,
     CHUNK_SIZE,
     CHUNK_OVERLAP,
     EMBEDDING_MODEL,
     CHAT_MODEL_OPENAI,
     CHAT_MODEL_GEMINI,
     RETRIEVER_K,
+    QDRANT_URL,
+    QDRANT_COLLECTION,
 )
 
 logger = logging.getLogger(__name__)
 
-# Set API keys in environment for LangChain
 if OPENAI_API_KEY:
     os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 if GOOGLE_API_KEY:
     os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
 
-# ── Globals & Prompts ────────────────────────────────────────────────
+# ── Globals & Prompts ─────────────────────────────────────────────────
 _embeddings = None
-_vector_store: FAISS | None = None
+_qdrant: QdrantClient | None = None
 
-DEFAULT_RAG_PROMPT = """You are an expert insurance policy assistant. Answer the user's question using ONLY the provided policy excerpts.
+INSURANCE_TYPES = {"motor", "health", "travel", "crop", "general"}
+
+DEFAULT_RAG_PROMPT = """You are an expert insurance policy assistant.
+Answer the user's question using ONLY the provided policy excerpts.
 
 RULES:
-1. Start with a direct "🧠 **AI Answer:**" section. Be highly concise.
-2. If asking for specific details (like name, number, date), use structured fields (e.g., Policy Name: X).
+1. Start with "🧠 **AI Answer:**". Be highly concise.
+2. For specific details use structured fields (Policy Name: X).
 3. **Bold** key numbers, amounts, and limits.
-4. Keep the answer under visually 2 lines. Do NOT write paragraphs.
-5. If unsure, state that the information is missing from the provided documents.
+4. Keep under 2 lines. No paragraphs.
+5. If unsure, say the information is missing from the documents.
 
 Context:
 {context}
@@ -48,6 +54,9 @@ Context:
 Question: {question}
 
 Answer:"""
+
+
+# ── Embeddings ────────────────────────────────────────────────────────
 
 class MockEmbeddings:
     """Mock embeddings for when no internet is available."""
@@ -72,19 +81,54 @@ def get_embeddings():
             try:
                 from langchain_google_genai import GoogleGenerativeAIEmbeddings
                 _embeddings = GoogleGenerativeAIEmbeddings(
-                    model="models/embedding-001", 
+                    model="models/embedding-001",
                     google_api_key=GOOGLE_API_KEY
                 )
                 logger.info("Gemini embeddings initialized.")
                 return _embeddings
             except Exception as ge:
                 logger.error("Gemini embeddings also failed: %s", ge)
-        
-        # Fallback to a dummy embedding if all else fails (to allow server to start)
-        logger.warning("No embeddings available. Using mock embeddings.")
+
+        logger.warning(
+            "⚠️ MockEmbeddings active — similarity search non-functional. "
+            "Check internet or GOOGLE_API_KEY."
+        )
         _embeddings = MockEmbeddings()
         return _embeddings
 
+
+# ── Qdrant client ─────────────────────────────────────────────────────
+
+def get_qdrant() -> QdrantClient | None:
+    """Get or create the Qdrant client. Returns None if Qdrant is unreachable."""
+    global _qdrant
+    if _qdrant is not None:
+        return _qdrant
+
+    try:
+        client = QdrantClient(url=QDRANT_URL, timeout=5)
+        # Test connectivity
+        existing = [c.name for c in client.get_collections().collections]
+        if QDRANT_COLLECTION not in existing:
+            client.create_collection(
+                collection_name=QDRANT_COLLECTION,
+                vectors_config=VectorParams(size=384, distance=Distance.COSINE),
+            )
+            logger.info("Created Qdrant collection: %s", QDRANT_COLLECTION)
+        else:
+            logger.info("Connected to existing Qdrant collection: %s", QDRANT_COLLECTION)
+        _qdrant = client
+        return _qdrant
+    except Exception as e:
+        logger.error(
+            "⚠️ Cannot connect to Qdrant at %s: %s. "
+            "Make sure Docker is running: docker run -d -p 6333:6333 qdrant/qdrant",
+            QDRANT_URL, e
+        )
+        return None
+
+
+# ── LLM chain ─────────────────────────────────────────────────────────
 
 _llm_chain: list = []
 
@@ -99,7 +143,7 @@ def _build_llm_chain() -> list:
 
     if GOOGLE_API_KEY:
         try:
-            from langchain_google_genai import ChatGoogleGenerativeAI # pyre-ignore
+            from langchain_google_genai import ChatGoogleGenerativeAI  # pyre-ignore
             llms.append({
                 "name": "Gemini",
                 "llm": ChatGoogleGenerativeAI(
@@ -116,7 +160,7 @@ def _build_llm_chain() -> list:
 
     if OPENAI_API_KEY:
         try:
-            from langchain_openai import ChatOpenAI # pyre-ignore
+            from langchain_openai import ChatOpenAI  # pyre-ignore
             llms.append({
                 "name": "OpenAI",
                 "llm": ChatOpenAI(
@@ -134,11 +178,16 @@ def _build_llm_chain() -> list:
     return _llm_chain
 
 
+def reset_llm_chain():
+    global _llm_chain
+    _llm_chain = []
+
+
 def _is_rate_limit_error(e: Exception) -> bool:
     """Check if an exception is a rate limit / quota error."""
     err = str(e).lower()
     return any(word in err for word in [
-        "quota", "rate", "limit", "429", "too many", 
+        "quota", "rate", "limit", "429", "too many",
         "resource_exhausted", "exceeded"
     ])
 
@@ -148,8 +197,8 @@ def _try_llm_chain(context: str, question: str, prompt_template: str | None = No
     Try each LLM in the chain in order.
     Returns answer string or None if all fail.
     """
-    from langchain_core.prompts import PromptTemplate # pyre-ignore
-    from langchain_core.output_parsers import StrOutputParser # pyre-ignore
+    from langchain_core.prompts import PromptTemplate  # pyre-ignore
+    from langchain_core.output_parsers import StrOutputParser  # pyre-ignore
 
     template = prompt_template or DEFAULT_RAG_PROMPT
     prompt = PromptTemplate.from_template(template)
@@ -166,39 +215,32 @@ def _try_llm_chain(context: str, question: str, prompt_template: str | None = No
         except Exception as e:
             if _is_rate_limit_error(e):
                 logger.warning("%s rate limited — trying next provider", name)
-                continue   # try next LLM
             else:
                 logger.warning("%s failed (%s) — trying next provider", name, str(e)[:80])
-                continue
+            continue
 
     logger.warning("All LLM providers failed — falling back to extractive QA")
-    return None  # triggers extractive fallback
+    return None
 
 
-def _store_path() -> str:
-    return os.path.abspath(VECTOR_STORE_PATH)
+# ── Ingestion ─────────────────────────────────────────────────────────
 
+def ingest_file(file_path: str, insurance_type: str = "general") -> int:
+    """
+    Ingest a document into Qdrant, tagged with insurance_type.
+    insurance_type: motor | health | travel | crop | general
+    """
+    client = get_qdrant()
+    if client is None:
+        logger.error("Qdrant unavailable — cannot ingest %s", file_path)
+        return 0
 
-def get_vector_store() -> FAISS | None:
-    global _vector_store
-    if _vector_store is not None:
-        return _vector_store
-
-    index_dir = _store_path()
-    index_file = os.path.join(index_dir, "index.faiss")
-    if os.path.exists(index_file):
-        logger.info("Loading existing FAISS index from %s", index_dir)
-        _vector_store = FAISS.load_local(
-            index_dir, get_embeddings(), allow_dangerous_deserialization=True
-        )
-    return _vector_store
-
-
-def ingest_file(file_path: str) -> int:
-    global _vector_store
+    insurance_type = insurance_type.lower()
+    if insurance_type not in INSURANCE_TYPES:
+        insurance_type = "general"
 
     path = Path(file_path)
-    ext = path.suffix.lower()
+    ext  = path.suffix.lower()
 
     if ext == ".pdf":
         loader = PyPDFLoader(str(path))
@@ -208,36 +250,88 @@ def ingest_file(file_path: str) -> int:
         raise ValueError(f"Unsupported file type: {ext}")
 
     documents = loader.load()
-
-    splitter = RecursiveCharacterTextSplitter(
+    splitter  = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP,
     )
     chunks = splitter.split_documents(documents)
 
     if not chunks:
-        logger.warning("No chunks produced from %s", file_path)
+        logger.warning("No chunks from %s", file_path)
         return 0
 
-    if _vector_store is None:
-        _vector_store = FAISS.from_documents(chunks, get_embeddings())
-    else:
-        _vector_store.add_documents(chunks)
+    emb = get_embeddings()
 
-    store_dir = _store_path()
-    os.makedirs(store_dir, exist_ok=True)
-    _vector_store.save_local(store_dir)
-    logger.info("Ingested %d chunks from %s", len(chunks), file_path)
+    # Get current max ID for offset
+    count  = client.count(collection_name=QDRANT_COLLECTION).count
+    points = []
 
+    for i, chunk in enumerate(chunks):
+        vector = emb.embed_query(chunk.page_content)
+        points.append(PointStruct(
+            id      = count + i + 1,
+            vector  = vector,
+            payload = {
+                "text":           chunk.page_content,
+                "source":         str(path.name),
+                "insurance_type": insurance_type,
+                "page":           chunk.metadata.get("page", 0),
+            }
+        ))
+
+    client.upsert(collection_name=QDRANT_COLLECTION, points=points)
+    logger.info("Ingested %d chunks [%s] from %s", len(chunks), insurance_type, file_path)
     return len(chunks)
 
 
-# ── Answer Formatting Helpers ────────────────────────────────────────
+# ── Retrieval ─────────────────────────────────────────────────────────
 
+def _retrieve(question: str, insurance_type: str | None = None, k: int = RETRIEVER_K) -> list:
+    """
+    Retrieve top-k chunks. If insurance_type given, filter to that type only.
+    Falls back to unfiltered search if filtered results are empty.
+    """
+    client = get_qdrant()
+    if client is None:
+        return []
+
+    emb    = get_embeddings()
+    vector = emb.embed_query(question)
+
+    search_filter = None
+    if insurance_type and insurance_type.lower() in INSURANCE_TYPES:
+        search_filter = Filter(
+            must=[FieldCondition(
+                key="insurance_type",
+                match=MatchValue(value=insurance_type.lower())
+            )]
+        )
+
+    results = client.search(
+        collection_name=QDRANT_COLLECTION,
+        query_vector=vector,
+        limit=k,
+        query_filter=search_filter,
+        with_payload=True,
+    )
+
+    # Fallback: if no results with filter, search without
+    if not results and search_filter:
+        logger.warning("No %s docs found — falling back to unfiltered search", insurance_type)
+        results = client.search(
+            collection_name=QDRANT_COLLECTION,
+            query_vector=vector,
+            limit=k,
+            with_payload=True,
+        )
+
+    return results
+
+
+# ── Answer helpers ────────────────────────────────────────────────────
 
 def _extract_section_info(text: str) -> str:
     """Try to extract a section/heading reference from a chunk of text."""
-    # Match patterns like "Section 2", "2.1 Inpatient", "SECTION 3 – COVERAGE"
     patterns = [
         r'(SECTION\s+\d+[^═\n]{0,60})',
         r'(\d+\.\d+\s+[A-Z][^\n]{3,50})',
@@ -255,160 +349,122 @@ def _extract_section_info(text: str) -> str:
 def _extract_key_values(text: str) -> list[str]:
     """Extract key numerical/monetary values from text for bold highlighting."""
     highlights = []
-    # Money amounts like $10,000 or ₹5,00,000
-    money = re.findall(r'[\$₹]\s?[\d,]+(?:\.\d+)?', text)
-    highlights.extend(money)
-    # Percentages
-    pcts = re.findall(r'\d+(?:\.\d+)?%', text)
-    highlights.extend(pcts)
-    # Durations like "180 days", "30 days", "12 months"
-    durations = re.findall(r'\d+\s+(?:days?|months?|years?|hours?)', text, re.IGNORECASE)
-    highlights.extend(durations)
+    highlights.extend(re.findall(r'[\$₹]\s?[\d,]+(?:\.\d+)?', text))
+    highlights.extend(re.findall(r'\d+(?:\.\d+)?%', text))
+    highlights.extend(re.findall(r'\d+\s+(?:days?|months?|years?|hours?)', text, re.IGNORECASE))
     return list(set(highlights))
 
 
-def _calculate_confidence(question: str, docs: list, scores: list[float] | None = None) -> str:
+def _calculate_confidence(question: str, results: list) -> str:
     """Estimate answer confidence based on exact/partial matches in retrieval."""
-    if not docs:
+    if not results:
         return "Low"
-    
-    # Clean question
-    clean_q = question.lower().strip().replace('?', '')
-    doc_text = docs[0].page_content.lower()
-    
-    # Exact phrase match gives immediate high confidence
+
+    doc_text = results[0].payload.get("text", "").lower()
+    clean_q  = question.lower().strip().replace('?', '')
+
     if clean_q in doc_text:
         return "High"
 
-    q_words = set(re.findall(r'\w+', clean_q))
-    stop_words = {"what", "is", "the", "my", "a", "an", "does", "do", "how", "much", 
+    stop_words = {"what", "is", "the", "my", "a", "an", "does", "do", "how", "much",
                   "many", "can", "i", "in", "for", "of", "to", "and", "or", "are", "this"}
-    q_keywords = q_words - stop_words
+    q_keywords = set(re.findall(r'\w+', clean_q)) - stop_words
 
     if not q_keywords:
         return "Low"
 
-    match_count = sum(1 for kw in q_keywords if kw in doc_text)
-    ratio = match_count / len(q_keywords)
-
-    if ratio >= 0.8:
-        return "High"
-    elif ratio >= 0.4:
-        return "Medium"
-    else:
-        return "Low"
+    ratio = sum(1 for kw in q_keywords if kw in doc_text) / len(q_keywords)
+    return "High" if ratio >= 0.8 else "Medium" if ratio >= 0.4 else "Low"
 
 
-def _build_source_info(doc) -> dict:
-    """Build a structured source info dict from a document."""
-    text = str(doc.page_content[:200]).replace("\n", " ").strip()
-    section = _extract_section_info(doc.page_content)
-
-    # Try to get page number from metadata
-    page = ""
-    if hasattr(doc, "metadata"):
-        if "page" in doc.metadata:
-            page = f"Page {doc.metadata['page'] + 1}"
-        elif "source" in doc.metadata:
-            source_file = Path(doc.metadata["source"]).stem
-            page = source_file.replace("_", " ").title()
-
-    return {"text": text, "section": section, "page": page}
+def _build_source_info(result) -> dict:
+    """Build a structured source info dict from a Qdrant search result."""
+    payload = result.payload
+    text    = str(payload.get("text", ""))[:200].replace("\n", " ").strip()
+    section = _extract_section_info(payload.get("text", ""))
+    page    = f"Page {payload.get('page', 0) + 1}"
+    return {
+        "text":           text,
+        "section":        section,
+        "page":           page,
+        "insurance_type": payload.get("insurance_type", "general"),
+        "source":         payload.get("source", ""),
+    }
 
 
-def _format_extractive_answer(question: str, docs: list) -> str:
+def _format_extractive_answer(question: str, results: list) -> str:
     """Produce a concise, well-formatted answer from retrieved chunks."""
-    if not docs:
+    if not results:
         return (
             "⚠️ **Service temporarily unavailable**\n\n"
             "All AI providers are currently rate limited. "
             "Please try again in a minute."
         )
 
-    primary_doc = docs[0]
-    content = primary_doc.page_content.strip()
-    
-    # Split into sentences
+    content   = results[0].payload.get("text", "").strip()
     sentences = re.split(r'(?<=[.!?])\s+', content)
-    q_lower_set = set(re.findall(r'\w+', question.lower()))
-    stop_words = {"what", "is", "the", "my", "a", "an", "does", "do", "how", "much", 
-                  "many", "can", "i", "in", "for", "of", "to", "and", "or", "are", "this"}
-    q_words = q_lower_set - stop_words
 
-    # Score sentences based on keyword overlap and presence of numbers (often answers)
+    stop_words = {"what", "is", "the", "my", "a", "an", "does", "do", "how", "much",
+                  "many", "can", "i", "in", "for", "of", "to", "and", "or", "are", "this"}
+    q_words = set(re.findall(r'\w+', question.lower())) - stop_words
+
     scored: list[tuple[float, str]] = []
     for s in sentences:
-        s_lower = s.lower()
-        score = sum(1.0 for w in q_words if w in s_lower)
-        # Boost sentences that contain numbers/amounts since they usually answer "how much/many"
+        score = sum(1.0 for w in q_words if w in s.lower())
         if re.search(r'\d+', s):
             score += 0.5
         scored.append((score, s))
 
     scored.sort(key=lambda x: -x[0])
-    
-    # Pick the top 1-2 sentences
-    best_sentences = [s for score, s in scored[:2] if score > 0] # pyre-ignore
-    
-    if not best_sentences:
-        answer = sentences[0] if sentences else str(content[:200]) # pyre-ignore
-    else:
-        # Re-order the top sentences as they appeared in the text for coherence
-        best_sentences.sort(key=lambda s: content.find(s))
-        answer = " ".join(best_sentences)
+    best = [s for sc, s in scored[:2] if sc > 0]
 
-    # Bold key values
-    key_values = _extract_key_values(answer)
-    for val in key_values:
+    if not best:
+        answer = sentences[0] if sentences else content[:200]
+    else:
+        best.sort(key=lambda s: content.find(s))
+        answer = " ".join(best)
+
+    for val in _extract_key_values(answer):
         answer = answer.replace(val, f"**{val}**")
 
-    # Clean up formatting of the base answer
     answer = re.sub(r'\s+', ' ', answer).strip()
     answer = re.sub(r'═+', '', answer).strip()
-    
-    # Capitalize first letter if needed
     if answer and answer[0].islower():
-        # pyre-ignore
         answer = answer[0].upper() + answer[1:]
+    if len(answer) > 250:
+        answer = answer[:247] + "..."
 
-    # If the user asked for structured data (name, number), try to extract them as fields
-    q_lower = question.lower()
-    lines: list[str] = []
-    if "policy name" in q_lower or "policy number" in q_lower:
-         if "name" in q_lower:
-             name_match = re.search(r'([A-Z\s]+POLICY)', content)
-             if name_match:
-                 val = re.sub(r'\s+', ' ', name_match.group(1)).strip()
-                 lines.append(f"**Policy Name:** {val}")
-         if "number" in q_lower:
-             # Find alphanumeric sequences with dashes
-             nums = re.findall(r'[A-Z]+-[A-Z]+-\d{4}-\d+', content)
-             if nums:
-                 lines.append(f"**Policy Number:** {nums[0]}")
-         if lines:
-             answer = "\n\n".join(lines)
-             
-    # Enforce strict maximum length (2 lines max visually)
-    if not lines and len(answer) > 250:
-        # pyre-ignore
-        answer = str(answer[:247]) + "..."
-             
-    final_output = (
+    return (
         "⚠️ **AI providers are busy — showing best match from documents:**\n\n"
         f"{answer}\n\n"
-        "_This is an automated extract, not a full AI answer. "
-        "Try again in a moment for a better response._"
+        "_This is an automated extract. Try again for a full AI answer._"
     )
-    return final_output
 
 
-def query_rag(question: str) -> dict:
+# ── Main query entry point ────────────────────────────────────────────
+
+def query_rag(question: str, insurance_type: str | None = None) -> dict:
     """
-    Run a RAG query: retrieve relevant chunks → format answer → return
-    with structured source info and confidence.
+    RAG query with optional insurance_type filtering.
+    Returns answer, sources, confidence, degraded.
     """
-    store = get_vector_store()
-    if store is None:
+    client = get_qdrant()
+    if client is None:
+        return {
+            "answer": (
+                "⚠️ **Vector database unavailable**\n\n"
+                "Qdrant is not running. Start it with:\n"
+                "`docker run -d -p 6333:6333 qdrant/qdrant`\n\n"
+                "Then restart the backend server."
+            ),
+            "sources": [],
+            "confidence": "Low",
+            "degraded": True,
+        }
+
+    # Check if collection has any documents
+    count = client.count(collection_name=QDRANT_COLLECTION).count
+    if count == 0:
         return {
             "answer": "⚠️ Please upload a policy document first.",
             "sources": [],
@@ -416,27 +472,30 @@ def query_rag(question: str) -> dict:
             "degraded": False,
         }
 
-    retriever = store.as_retriever(search_kwargs={"k": RETRIEVER_K})
-    source_docs = retriever.invoke(question)
+    results = _retrieve(question, insurance_type)
 
-    # Build structured sources
-    sources = [_build_source_info(doc) for doc in source_docs]
+    if not results:
+        return {
+            "answer": "⚠️ No relevant documents found for your query.",
+            "sources": [],
+            "confidence": "Low",
+            "degraded": False,
+        }
 
-    # Calculate confidence
-    confidence = _calculate_confidence(question, source_docs)
-    context = "\n\n".join([doc.page_content for doc in source_docs])
+    sources    = [_build_source_info(r) for r in results]
+    confidence = _calculate_confidence(question, results)
+    context    = "\n\n".join([r.payload.get("text", "") for r in results])
 
-    # Try Gemini → OpenAI → extractive (automatic cascade)
-    answer = _try_llm_chain(context, question)
+    answer   = _try_llm_chain(context, question)
     degraded = False
 
     if answer is None:
-        answer = _format_extractive_answer(question, source_docs)
-        degraded = True          # flag it
+        answer   = _format_extractive_answer(question, results)
+        degraded = True
 
     return {
-        "answer": answer,
-        "sources": sources,
+        "answer":     answer,
+        "sources":    sources,
         "confidence": confidence,
-        "degraded": degraded,
+        "degraded":   degraded,
     }

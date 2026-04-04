@@ -38,3 +38,7 @@ MOTOR_DEDUCTIBLE_PCT = float(os.getenv("MOTOR_DEDUCTIBLE_PCT", "0.10"))  # 10%
 
 # Max image size allowed for upload (in MB)
 MAX_IMAGE_SIZE_MB    = int(os.getenv("MAX_IMAGE_SIZE_MB", "10"))
+
+# ── Qdrant (replaces FAISS) ──────────────────────────────────────
+QDRANT_URL        = os.getenv("QDRANT_URL", "http://localhost:6333")
+QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "insurance_policies")

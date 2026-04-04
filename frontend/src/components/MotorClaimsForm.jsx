@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { UploadCloud, CheckCircle, AlertTriangle, FileText, Camera, ShieldCheck, Car } from 'lucide-react'
 import confetti from 'canvas-confetti'
+import InsuranceTypeSelector from './InsuranceTypeSelector'
 const severityStyles = {
   MINOR:    { background: "#FEF3C7", color: "#92400E" },
   MODERATE: { background: "#FFEDD5", color: "#9A3412" },
@@ -38,6 +39,7 @@ const LOADING_STEPS = [
 
 export default function MotorClaimsForm({ API_BASE, showToast }) {
   const [loadingStep, setLoadingStep] = useState(0)
+  const [insuranceType, setInsuranceType] = useState('motor')
   const [formData, setFormData] = useState({
     claimant_name: '',
     vehicle_number: '',
@@ -71,6 +73,11 @@ export default function MotorClaimsForm({ API_BASE, showToast }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+
+    if (insuranceType !== 'motor') {
+      showToast(`AI Vision analysis for ${insuranceType} claims coming soon in Phase 4!`, 'error')
+      return
+    }
 
     const yearError = validateYear(formData.year)
     if (yearError) {
@@ -144,12 +151,15 @@ export default function MotorClaimsForm({ API_BASE, showToast }) {
     <div className="claims-form-container">
       <header className="chat-header" style={{ marginBottom: '2rem' }}>
         <div>
-          <h1>Motor Claims Estimator</h1>
+          <h1>Claim Estimator</h1>
           <div className="subtitle">Upload damage photos for instant AI repair cost breakdown</div>
         </div>
       </header>
       
       <div className="claims-content">
+        <div style={{ marginBottom: 8 }}>
+          <InsuranceTypeSelector value={insuranceType} onChange={setInsuranceType} compact />
+        </div>
         <form onSubmit={handleSubmit} className="premium-form">
           <div className="form-grid">
             <div className="form-group">
@@ -160,22 +170,26 @@ export default function MotorClaimsForm({ API_BASE, showToast }) {
               <label>Claimant Name</label>
               <input type="text" name="claimant_name" value={formData.claimant_name} onChange={handleInputChange} required placeholder="Your full name" />
             </div>
-            <div className="form-group">
-              <label>Vehicle Number</label>
-              <input type="text" name="vehicle_number" value={formData.vehicle_number} onChange={handleInputChange} required placeholder="Registration plate" />
-            </div>
-            <div className="form-group">
-              <label>Vehicle Make</label>
-              <input type="text" name="vehicle_make" value={formData.vehicle_make} onChange={handleInputChange} required placeholder="e.g. Honda" />
-            </div>
-            <div className="form-group">
-              <label>Vehicle Model</label>
-              <input type="text" name="vehicle_model" value={formData.vehicle_model} onChange={handleInputChange} required placeholder="e.g. City" />
-            </div>
-            <div className="form-group">
-              <label>Year</label>
-              <input type="number" name="year" value={formData.year} onChange={handleInputChange} required max={new Date().getFullYear()} />
-            </div>
+            {insuranceType === 'motor' && (
+              <>
+                <div className="form-group">
+                  <label>Vehicle Number</label>
+                  <input type="text" name="vehicle_number" value={formData.vehicle_number} onChange={handleInputChange} required placeholder="Registration plate" />
+                </div>
+                <div className="form-group">
+                  <label>Vehicle Make</label>
+                  <input type="text" name="vehicle_make" value={formData.vehicle_make} onChange={handleInputChange} required placeholder="e.g. Honda" />
+                </div>
+                <div className="form-group">
+                  <label>Vehicle Model</label>
+                  <input type="text" name="vehicle_model" value={formData.vehicle_model} onChange={handleInputChange} required placeholder="e.g. City" />
+                </div>
+                <div className="form-group">
+                  <label>Year</label>
+                  <input type="number" name="year" value={formData.year} onChange={handleInputChange} required max={new Date().getFullYear()} />
+                </div>
+              </>
+            )}
             <div className="form-group" style={{ gridColumn: '1 / -1' }}>
               <label>Incident Date</label>
               <input type="date" name="incident_date" value={formData.incident_date} onChange={handleInputChange} required max={getLocalToday()} />

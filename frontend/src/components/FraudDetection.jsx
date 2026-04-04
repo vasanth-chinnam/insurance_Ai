@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Search, AlertTriangle, CheckCircle, Shield, Clock, FileText } from "lucide-react"
+import InsuranceTypeSelector from "./InsuranceTypeSelector"
 
 const API_BASE = "http://127.0.0.1:8000"
 
@@ -19,7 +20,7 @@ const LOADING_STEPS = [
 
 export default function FraudDetection({ showToast }) {
   const [form, setForm] = useState({
-    claim_type: "motor",
+    insurance_type: "motor",
     policy_number: "",
     claim_amount: "",
     days_after_incident: "",
@@ -107,27 +108,14 @@ export default function FraudDetection({ showToast }) {
           </p>
 
           <div className="form-grid">
-            <div className="form-group">
-              <label>Claim Type</label>
-              <select
-                value={form.claim_type}
-                onChange={e => setForm({...form, claim_type: e.target.value})}
-                style={{
-                  padding: "0.75rem 1rem",
-                  border: "1.5px solid var(--border)",
-                  borderRadius: 12,
-                  fontSize: "0.95rem",
-                  outline: "none",
-                  background: "#f8fafc",
-                  cursor: "pointer",
-                }}
-              >
-                <option value="motor">🚗 Motor</option>
-                <option value="health">🏥 Health</option>
-                <option value="travel">✈️ Travel</option>
-                <option value="crop">🌾 Crop</option>
-              </select>
-            </div>
+          <div style={{ marginBottom: "1rem" }}>
+            <label style={{ fontSize: "0.85rem", fontWeight: 500, color: "#374151", marginBottom: 8, display: "block" }}>Insurance Type</label>
+            <InsuranceTypeSelector
+              value={form.insurance_type}
+              onChange={v => setForm({...form, insurance_type: v})}
+              compact
+            />
+          </div>
 
             <div className="form-group">
               <label>Policy Number *</label>

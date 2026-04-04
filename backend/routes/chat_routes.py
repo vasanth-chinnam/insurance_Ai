@@ -27,7 +27,7 @@ async def chat(request: ChatRequest):
     confidence = "High"
     degraded = False
     if route == "policy_rag":
-        result = query_rag(query)
+        result = query_rag(query, insurance_type=request.insurance_type)
         answer = result["answer"]
         sources = result["sources"]
         confidence = result.get("confidence", "Medium")
@@ -80,7 +80,19 @@ async def upload_document(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, f)
 
     try:
-        chunk_count = ingest_file(dest_path)
+        # Detect insurance type from filename
+        name_lower = file.filename.lower()
+        if "motor" in name_lower or "vehicle" in name_lower or "auto" in name_lower:
+            itype = "motor"
+        elif "health" in name_lower or "medical" in name_lower:
+            itype = "health"
+        elif "travel" in name_lower or "flight" in name_lower:
+            itype = "travel"
+        elif "crop" in name_lower or "agri" in name_lower:
+            itype = "crop"
+        else:
+            itype = "general"
+        chunk_count = ingest_file(dest_path, insurance_type=itype)
         chat_service.add_message(
             "system",
             f"📄 Document '{file.filename}' uploaded and indexed ({chunk_count} chunks).",

@@ -14,8 +14,11 @@ def analyze_fraud(request: FraudRequest):
     """Run fraud analysis on the given claim data."""
     logger.info(
         "Fraud analysis requested — type=%s amount=%.0f",
-        request.claim_type,
+        request.insurance_type,
         request.claim_amount,
     )
-    result = detect_fraud(request.model_dump())
+    data = request.model_dump()
+    # fraud_detector.py uses "claim_type" as the internal key
+    data["claim_type"] = data.pop("insurance_type")
+    result = detect_fraud(data)
     return FraudResponse(**result)

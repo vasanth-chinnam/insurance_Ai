@@ -1,14 +1,18 @@
 from pydantic import BaseModel
+from typing import Optional
 
 
 class ChatRequest(BaseModel):
     query: str
+    insurance_type: Optional[str] = None  # motor | health | travel | crop
 
 
 class SourceInfo(BaseModel):
     text: str
     section: str = ""
     page: str = ""
+    insurance_type: str = ""
+    source: str = ""
 
 
 class ChatResponse(BaseModel):

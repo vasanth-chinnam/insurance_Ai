@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { 
-  Car, 
+  FileText, 
   Search, 
   BarChart3, 
   Leaf, 
@@ -15,15 +15,16 @@ import { motion, AnimatePresence } from 'framer-motion'
 import PolicyChat from './components/PolicyChat'
 import MotorClaimsForm from './components/MotorClaimsForm'
 import FraudDetection from './components/FraudDetection'
+import RiskProfiler from './components/RiskProfiler'
 import './App.css'
 
 const API_BASE = 'http://127.0.0.1:8000/api'
 
 const NAV_ITEMS = [
   { id: 'policy_rag', icon: Stethoscope, label: 'Policy Q&A', badge: 'Live', phase: null },
-  { id: 'motor_claim', icon: Car, label: 'Motor Claims', badge: 'Live', phase: 2 },
+  { id: 'motor_claim', icon: FileText, label: 'Claim Estimator', badge: 'Live', phase: 2 },
   { id: 'fraud_detection', icon: Search, label: 'Fraud Detection', badge: 'Live', phase: 3 },
-  { id: 'risk_profiler', icon: BarChart3, label: 'Risk Profiler', badge: 'Phase 4', phase: 4 },
+  { id: 'risk_profiler', icon: BarChart3, label: 'Risk Profiler', badge: 'Live', phase: 4 },
   { id: 'crop_payout', icon: Leaf, label: 'Crop Insurance', badge: 'Phase 5', phase: 5 },
   { id: 'renewal_agent', icon: RefreshCcw, label: 'Renewal Compare', badge: 'Phase 6', phase: 6 },
 ]
@@ -57,9 +58,9 @@ function App() {
             return (
               <div
                 key={item.id}
-                className={`nav-item ${activeNav === item.id ? 'active' : ''} ${item.phase && item.phase > 3 ? 'disabled' : ''}`}
+                className={`nav-item ${activeNav === item.id ? 'active' : ''} ${item.phase && item.phase > 4 ? 'disabled' : ''}`}
                 onClick={() => { 
-                  if (!item.phase || item.phase <= 3) {
+                  if (!item.phase || item.phase <= 4) {
                     setActiveNav(item.id)
                     setSidebarOpen(false)
                   } else {
@@ -109,6 +110,10 @@ function App() {
           <FraudDetection
             showToast={showToast}
           />
+        )}
+
+        {activeNav === 'risk_profiler' && (
+          <RiskProfiler />
         )}
       </main>
 

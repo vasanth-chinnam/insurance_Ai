@@ -1,0 +1,39 @@
+﻿commit 621dbd767781af629b7667a587ccb3d7a90d5d06
+Author: Vasanth <23eg107b14@anurag.edu.in>
+Date:   Sun Mar 22 00:26:57 2026 +0530
+
+    feat(claims): Phase 2 Motor Claims Estimator module, UI polish, and graceful degradation fallback
+
+A	.env
+M	.gitignore
+M	backend/__pycache__/config.cpython-313.pyc
+M	backend/__pycache__/main.cpython-313.pyc
+M	backend/config.py
+M	backend/main.py
+A	backend/models/__pycache__/claim_schemas.cpython-313.pyc
+A	backend/models/claim_schemas.py
+A	backend/prompts/__init__.py
+A	backend/prompts/__pycache__/__init__.cpython-313.pyc
+A	backend/prompts/__pycache__/motor_prompt.cpython-313.pyc
+A	backend/prompts/motor_prompt.py
+A	backend/routes/__pycache__/claims_routes.cpython-313.pyc
+A	backend/routes/claims_routes.py
+A	backend/services/__pycache__/claims_service.cpython-313.pyc
+M	backend/services/__pycache__/rag_service.cpython-313.pyc
+A	backend/services/claims_service.py
+A	data/policies/Blogging_Platform_Backend_Abstract.pdf
+A	data/policies/r ppt.pdf
+A	data/policies/walkthrough.md
+M	data/vector_store/index.faiss
+M	data/vector_store/index.pkl
+M	frontend/src/App.jsx
+A	frontend/src/components/MotorClaimsForm.jsx
+A	frontend/src/components/PolicyChat.jsx
+M	frontend/src/index.css
+A	git_pull.log
+A	git_push.log
+A	push_error.txt
+A	test_fallback.py
+A	uploads/claims/car_damage.png
+A	uploads/claims/dam.jpg
+A	uploads/claims/test_car_damage_1774113577977.png

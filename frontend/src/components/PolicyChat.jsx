@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ShieldCheck, MessageSquare, FileText, Paperclip, Send, Trash2, Copy, Check } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import confetti from 'canvas-confetti'
+import InsuranceTypeSelector from './InsuranceTypeSelector'
 
 const QUICK_ACTIONS = [
   { icon: ShieldCheck, title: 'Policy Coverage', desc: 'What does my health insurance policy cover?', query: 'What does my health insurance policy cover?' },
@@ -14,6 +15,7 @@ export default function PolicyChat({ messages, setMessages, API_BASE, showToast 
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [copiedId, setCopiedId] = useState(null)
+  const [insuranceType, setInsuranceType] = useState('motor')
   
   const messagesEndRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -51,7 +53,7 @@ export default function PolicyChat({ messages, setMessages, API_BASE, showToast 
       const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, insurance_type: insuranceType }),
       })
       const data = await res.json()
 
@@ -148,6 +150,10 @@ export default function PolicyChat({ messages, setMessages, API_BASE, showToast 
           </button>
         </div>
       </header>
+
+      <div style={{ padding: '12px 20px 0' }}>
+        <InsuranceTypeSelector value={insuranceType} onChange={setInsuranceType} compact />
+      </div>
 
       <div className="messages-container">
         <AnimatePresence mode='wait'>

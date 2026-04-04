@@ -8,7 +8,7 @@ langchain-huggingface
 langchain-text-splitters
 sentence-transformers
 openai
-faiss-cpu
+qdrant-client
 pypdf
 tiktoken
 python-multipart
