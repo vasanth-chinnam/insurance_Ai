@@ -9,6 +9,7 @@ from backend.routes.chat_routes import router as chat_router
 from backend.routes.claims_routes import router as claims_router
 from backend.routes.fraud_routes import router as fraud_router
 from backend.api.risk_routes import router as risk_router
+from backend.api.crop_routes import router as crop_router
 from backend.services.rag_service import ingest_file
 from backend.config import POLICIES_DIR
 
@@ -62,6 +63,7 @@ app.include_router(chat_router, prefix="/api")
 app.include_router(claims_router)
 app.include_router(fraud_router)
 app.include_router(risk_router)
+app.include_router(crop_router)
 
 
 @app.get("/")
