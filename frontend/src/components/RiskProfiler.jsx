@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 
 const RISK_COLORS = {
   Low:       { color: "#16A34A", bg: "#DCFCE7", border: "#86EFAC" },
@@ -121,6 +121,16 @@ function MotorForm({ data, onChange }) {
 }
 
 function TravelForm({ data, onChange }) {
+  const [localText, setLocalText] = useState(() => (data.destinations || []).join(", "));
+
+  useEffect(() => {
+    const joined = (data.destinations || []).join(", ");
+    const localCanonical = (localText || "").split(",").map(d => d.trim()).filter(Boolean).join(", ");
+    if (joined !== localCanonical) {
+      setLocalText(joined);
+    }
+  }, [data.destinations]);
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
       {[
@@ -138,11 +148,15 @@ function TravelForm({ data, onChange }) {
       ))}
       <div style={{ gridColumn: "1 / -1" }}>
         <label style={{ fontSize: 12, color: "#6B7280" }}>DESTINATIONS (comma separated)</label>
-        <input value={(data.destinations || []).join(", ")}
-          onChange={e => onChange({
-            ...data,
-            destinations: e.target.value.split(",").map(d => d.trim()).filter(Boolean)
-          })}
+        <input value={localText}
+          onChange={e => {
+            const val = e.target.value;
+            setLocalText(val);
+            onChange({
+              ...data,
+              destinations: val.split(",").map(d => d.trim()).filter(Boolean)
+            });
+          }}
           placeholder="usa, uk, thailand"
           style={{ width: "100%", padding: "10px 12px", borderRadius: 8,
             border: "1px solid #E5E7EB", marginTop: 4, boxSizing: "border-box" }}/>
@@ -267,7 +281,7 @@ export default function RiskProfiler() {
         insurance_type: insuranceType,
         [insuranceType]: formData,
       }
-      const res = await fetch("http://localhost:8000/risk/profile", {
+      const res = await fetch("/risk/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

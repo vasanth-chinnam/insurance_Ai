@@ -35,7 +35,7 @@ export default function CropInsurance() {
 
   // Load farmers on mount
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/crop/farmers")
+    fetch("/crop/farmers")
       .then(r => r.json())
       .then(data => {
         setFarmers(data)
@@ -67,7 +67,7 @@ export default function CropInsurance() {
     setError(null)
     runLoadingSteps()
     try {
-      const res = await fetch("http://127.0.0.1:8000/crop/analyze", {
+      const res = await fetch("/crop/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

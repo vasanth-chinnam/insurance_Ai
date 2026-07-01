@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Literal
+from typing import Optional
 
-InsuranceType = Literal["motor", "health", "travel", "crop"]
+from backend.models.types import InsuranceType
 
 
 class ClaimRequest(BaseModel):

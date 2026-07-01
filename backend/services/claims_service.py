@@ -58,6 +58,7 @@ def _get_vision_llm() -> ChatGoogleGenerativeAI | None:
         google_api_key=GOOGLE_API_KEY,
         temperature=0,
         max_retries=1,
+        timeout=4,
     )
     logger.info("Vision LLM (%s) initialized", VISION_MODEL)
     return _vision_llm
@@ -335,25 +336,87 @@ def process_motor_claim(claim: ClaimRequest, image_path: str) -> ClaimResponse:
     result.image_analysis = image_analysis
 
     # ── Phase 3: Auto fraud check after claim estimation ─────────
-    try:
-        from backend.services.fraud_detector import detect_fraud
+    import uuid
+    from backend.db import save_claim, save_fraud_check, save_risk_profile, get_user_context
+    from backend.services.fraud_detector import detect_fraud
+    from backend.services.notifications import send_sms
 
+    claim_id = str(uuid.uuid4())
+    context = get_user_context(policy_number=claim.policy_number)
+    previous_claims = context.get("previous_claims_count", 0)
+
+    # 1. Save claim in estimated state
+    try:
+        save_claim(
+            claim_id       = claim_id,
+            policy_id      = claim.policy_number,
+            amount         = result.total_repair_estimate,
+            covered_amount = result.covered_amount,
+            status         = "estimated",
+            description    = claim.incident_description,
+        )
+    except Exception as dbe:
+        logger.warning("Failed to save claim to database: %s", dbe)
+
+    # 2. Run Auto fraud check
+    try:
         fraud_input = {
+            "claim_id":            claim_id,
             "claim_type":          "motor",
             "policy_number":       claim.policy_number,
             "claim_amount":        result.total_repair_estimate,
             "days_after_incident": 0,
-            "previous_claims":     0,
+            "previous_claims":     previous_claims,
             "incident_date":       claim.incident_date,
             "description":         claim.incident_description,
         }
-        result.fraud_check = detect_fraud(fraud_input)
+        fraud_res = detect_fraud(fraud_input)
+        result.fraud_check = fraud_res
         logger.info(
             "Auto fraud check: score=%d verdict=%s",
-            result.fraud_check["fraud_score"],
-            result.fraud_check["verdict"],
+            fraud_res["fraud_score"],
+            fraud_res["verdict"],
         )
+
+        # 3. Save fraud result to DB
+        fraud_check_id = str(uuid.uuid4())
+        save_fraud_check(
+            check_id=fraud_check_id,
+            claim_id=claim_id,
+            score=fraud_res["fraud_score"],
+            verdict=fraud_res["verdict"],
+            reasons=fraud_res.get("reasons", [])
+        )
+
+        # 4. Auto-approve or flag for review based on fraud verdict
+        status = "approved" if fraud_res["verdict"] == "Genuine" else "under_review"
+        save_claim(
+            claim_id       = claim_id,
+            policy_id      = claim.policy_number,
+            amount         = result.total_repair_estimate,
+            covered_amount = result.covered_amount,
+            status         = status,
+            description    = claim.incident_description,
+        )
+
+        # 5. Update risk profile in DB
+        user = context.get("user")
+        if user:
+            user_id = user["user_id"]
+            current_profile = context.get("risk_profile")
+            base_score = current_profile["score"] if current_profile else 30
+            new_score = min(base_score + ((previous_claims + 1) * 15), 100)
+            new_category = "High" if new_score > 60 else "Medium" if new_score > 35 else "Low"
+            profile_id = str(uuid.uuid4())
+            save_risk_profile(profile_id, user_id, "motor", new_score, new_category)
+
+            # 6. Send SMS notification
+            phone = user.get("phone")
+            if phone:
+                msg = f"InsureAI Update: Motor claim {claim_id[:8]}... for ₹{result.total_repair_estimate:,.0f} has been {status.upper()}."
+                send_sms(phone, msg)
+
     except Exception as e:
-        logger.warning("Auto fraud check failed: %s", str(e)[:100])
+        logger.warning("Auto fraud check/pipeline failed: %s", str(e))
 
     return result

@@ -42,3 +42,18 @@ MAX_IMAGE_SIZE_MB    = int(os.getenv("MAX_IMAGE_SIZE_MB", "10"))
 # ── Qdrant (replaces FAISS) ──────────────────────────────────────
 QDRANT_URL        = os.getenv("QDRANT_URL", "http://localhost:6333")
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "insurance_policies")
+
+# ── Phase 5: Crop Agent ──────────────────────────────────────────
+CROP_FARMERS_DB = os.path.join("data", "mock_db", "farmers.json")
+
+# ── Phase 6: Renewal ─────────────────────────────────────────────
+RENEWAL_COMPARISON_COUNT = int(os.getenv("RENEWAL_COMPARISON_COUNT", "3"))
+
+# ── Phase 7: Notifications (Twilio) ──────────────────────────────
+TWILIO_SID   = os.getenv("TWILIO_SID", "")
+TWILIO_TOKEN = os.getenv("TWILIO_TOKEN", "")
+TWILIO_FROM  = os.getenv("TWILIO_FROM", "")
+
+# ── Database (PostgreSQL for production) ─────────────────────────
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+

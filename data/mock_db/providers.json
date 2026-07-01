@@ -1,0 +1,130 @@
+[
+  {
+    "provider_id": "P001",
+    "name": "HDFC Ergo",
+    "rating": 4.5,
+    "claim_settlement_ratio": 98.2,
+    "network_hospitals": 10000,
+    "base_multipliers": {
+      "motor":  1.00,
+      "health": 1.05,
+      "travel": 0.95,
+      "crop":   1.10
+    },
+    "strengths": ["Fast claim settlement", "Wide network", "Digital first"],
+    "loyalty_discount_pct": 8,
+    "ncb_discount_pct": 10
+  },
+  {
+    "provider_id": "P002",
+    "name": "ICICI Lombard",
+    "rating": 4.3,
+    "claim_settlement_ratio": 97.8,
+    "network_hospitals": 8500,
+    "base_multipliers": {
+      "motor":  0.95,
+      "health": 1.00,
+      "travel": 1.05,
+      "crop":   1.00
+    },
+    "strengths": ["Lowest motor premiums", "AI-powered claims", "24/7 support"],
+    "loyalty_discount_pct": 7,
+    "ncb_discount_pct": 12
+  },
+  {
+    "provider_id": "P003",
+    "name": "Bajaj Allianz",
+    "rating": 4.2,
+    "claim_settlement_ratio": 96.5,
+    "network_hospitals": 7500,
+    "base_multipliers": {
+      "motor":  0.98,
+      "health": 0.95,
+      "travel": 1.00,
+      "crop":   0.95
+    },
+    "strengths": ["Competitive health plans", "Good crop coverage", "Pan-India presence"],
+    "loyalty_discount_pct": 10,
+    "ncb_discount_pct": 15
+  },
+  {
+    "provider_id": "P004",
+    "name": "Tata AIG",
+    "rating": 4.4,
+    "claim_settlement_ratio": 97.2,
+    "network_hospitals": 9000,
+    "base_multipliers": {
+      "motor":  1.02,
+      "health": 0.98,
+      "travel": 0.90,
+      "crop":   1.05
+    },
+    "strengths": ["Best travel insurance", "Premium health plans", "Strong brand trust"],
+    "loyalty_discount_pct": 6,
+    "ncb_discount_pct": 10
+  },
+  {
+    "provider_id": "P005",
+    "name": "New India Assurance",
+    "rating": 4.0,
+    "claim_settlement_ratio": 95.8,
+    "network_hospitals": 6000,
+    "base_multipliers": {
+      "motor":  0.90,
+      "health": 0.92,
+      "travel": 0.95,
+      "crop":   0.88
+    },
+    "strengths": ["Government backed", "Lowest premiums", "Widest crop coverage"],
+    "loyalty_discount_pct": 5,
+    "ncb_discount_pct": 8
+  },
+  {
+    "provider_id": "P006",
+    "name": "Star Health",
+    "rating": 4.6,
+    "claim_settlement_ratio": 99.1,
+    "network_hospitals": 14000,
+    "base_multipliers": {
+      "motor":  1.10,
+      "health": 0.90,
+      "travel": 1.00,
+      "crop":   1.15
+    },
+    "strengths": ["Best health insurer", "Highest settlement ratio", "Largest hospital network"],
+    "loyalty_discount_pct": 9,
+    "ncb_discount_pct": 12
+  },
+  {
+    "provider_id": "P007",
+    "name": "Reliance General",
+    "rating": 3.9,
+    "claim_settlement_ratio": 94.5,
+    "network_hospitals": 5500,
+    "base_multipliers": {
+      "motor":  0.88,
+      "health": 0.96,
+      "travel": 0.92,
+      "crop":   0.92
+    },
+    "strengths": ["Budget friendly", "Simple plans", "Quick online purchase"],
+    "loyalty_discount_pct": 12,
+    "ncb_discount_pct": 18
+  },
+  {
+    "provider_id": "P008",
+    "name": "Oriental Insurance",
+    "rating": 4.1,
+    "claim_settlement_ratio": 96.0,
+    "network_hospitals": 6800,
+    "base_multipliers": {
+      "motor":  0.93,
+      "health": 0.97,
+      "travel": 0.98,
+      "crop":   0.90
+    },
+    "strengths": ["Government PSU", "Reliable claims", "Good rural coverage"],
+    "loyalty_discount_pct": 6,
+    "ncb_discount_pct": 10
+  }
+]

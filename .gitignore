@@ -1,4 +1,42 @@
-﻿.env
+# Environment variables / credentials
+.env
+.env*.local
 
-.env
-.env
+# Database
+data/*.db
+backend/data/
+data/vector_store/
+data/policies/
+uploads/
+data/*.log
+
+
+# Python caching & environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Node / frontend build outputs
+node_modules/
+dist/
+build/
+.eslintcache
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln

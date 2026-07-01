@@ -12,6 +12,7 @@ router = APIRouter(prefix="/crop", tags=["Crop Agent"])
 
 @router.post("/analyze", response_model=CropAgentResponse)
 def analyze_crop(request: CropAnalyzeRequest):
+    """Analyze crop conditions, check historical weather indices, and evaluate payout eligibility."""
     return run_crop_agent(request)
 
 

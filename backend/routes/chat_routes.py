@@ -11,7 +11,7 @@ from backend.utils.router import route_query
 from backend.config import POLICIES_DIR
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api", tags=["chat"])
+router = APIRouter(tags=["chat"])
 
 
 @router.post("/chat", response_model=ChatResponse)

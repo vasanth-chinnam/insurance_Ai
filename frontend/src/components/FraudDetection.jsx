@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { Search, AlertTriangle, CheckCircle, Shield, Clock, FileText } from "lucide-react"
 import InsuranceTypeSelector from "./InsuranceTypeSelector"
 
-const API_BASE = "http://127.0.0.1:8000"
+const API_BASE = ""
 
 const RISK_CONFIG = {
   High:   { color: "#DC2626", bg: "#FEE2E2", border: "#FCA5A5", icon: "🔴", gradient: "linear-gradient(135deg, #DC2626, #B91C1C)" },

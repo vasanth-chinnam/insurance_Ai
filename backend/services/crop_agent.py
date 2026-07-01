@@ -486,6 +486,14 @@ def run_crop_agent(request: CropAnalyzeRequest) -> CropAgentResponse:
         farmer, payout_status, payout_amount, breaches,
     )
 
+    try:
+        phone = farmer.get("phone")
+        if phone:
+            from backend.services.notifications import send_sms
+            send_sms(phone, notification)
+    except Exception as e:
+        logger.warning("Failed to send crop notification SMS: %s", e)
+
     confidence = (
         "High"   if len(breaches) >= 2 else
         "Medium" if len(breaches) == 1 else

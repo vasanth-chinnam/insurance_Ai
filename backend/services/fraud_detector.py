@@ -20,7 +20,7 @@ VAGUE_WORDS = [
 SUSPICIOUS_WORDS = [
     "friend drove", "borrowed", "someone else",
     "no witnesses", "no receipt", "cash payment",
-    "lost documents", "burned", "stolen then found",
+    "lost documents", "burned", "stolen", "theft",
 ]
 
 
@@ -47,9 +47,9 @@ def _rule_high_amount(data: dict) -> tuple[int, str | None]:
     }
     t = thresholds.get(claim_type, thresholds["motor"])
 
-    if amount > t["very_high"]:
+    if amount >= t["very_high"]:
         return 25, f"Very high claim amount (₹{amount:,.0f}) for {claim_type} insurance"
-    elif amount > t["high"]:
+    elif amount >= t["high"]:
         return 15, f"Above average claim amount (₹{amount:,.0f}) for {claim_type} insurance"
     return 0, None
 
@@ -321,6 +321,22 @@ def detect_fraud(data: dict) -> dict:
     verdict, risk_level = _get_verdict(score)
     action = _get_recommended_action(verdict)
     report = _generate_investigation_report(data, score, reasons)
+
+    # Save to database if claim_id is present
+    claim_id = data.get("claim_id")
+    if claim_id:
+        import uuid
+        from backend.db import save_fraud_check
+        try:
+            save_fraud_check(
+                check_id=str(uuid.uuid4()),
+                claim_id=claim_id,
+                score=score,
+                verdict=verdict,
+                reasons=reasons,
+            )
+        except Exception as dbe:
+            logger.warning("Failed to save fraud check to database: %s", dbe)
 
     return {
         "fraud_score":          score,
