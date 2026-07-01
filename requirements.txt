@@ -16,3 +16,5 @@ python-dotenv
 langchain-google-genai
 google-generativeai
 httpx
+twilio
+psycopg2-binary

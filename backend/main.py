@@ -8,10 +8,15 @@ from contextlib import asynccontextmanager
 from backend.routes.chat_routes import router as chat_router
 from backend.routes.claims_routes import router as claims_router
 from backend.routes.fraud_routes import router as fraud_router
+from backend.routes.auth_routes import router as auth_router
 from backend.api.risk_routes import router as risk_router
 from backend.api.crop_routes import router as crop_router
+from backend.api.renewal_routes import router as renewal_router
+from backend.api.automation_routes import router as automation_router
+from backend.api.health_travel_routes import router as health_travel_router
 from backend.services.rag_service import ingest_file
 from backend.config import POLICIES_DIR
+from backend.db import init_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -20,10 +25,11 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """On startup, auto-ingest any policy documents already present."""
-    policies_dir = str(os.path.abspath(POLICIES_DIR))
+    init_db()
+    policies_dir = os.path.abspath(POLICIES_DIR)
     if os.path.isdir(policies_dir):
         for fname in os.listdir(policies_dir):
-            fpath = str(os.path.join(policies_dir, fname))
+            fpath = os.path.join(policies_dir, fname)
             if fname.lower().endswith((".pdf", ".txt", ".md")):
                 # Detect insurance type from filename
                 name_lower = fname.lower()
@@ -60,12 +66,21 @@ app.add_middleware(
 
 # ── Routers ──────────────────────────────────────────────────────────
 app.include_router(chat_router, prefix="/api")
+app.include_router(auth_router)
 app.include_router(claims_router)
 app.include_router(fraud_router)
 app.include_router(risk_router)
 app.include_router(crop_router)
+app.include_router(renewal_router)
+app.include_router(automation_router)
+app.include_router(health_travel_router)
 
 
 @app.get("/")
 def home():
     return {"message": "Insurance AI Platform Running 🚀"}
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}

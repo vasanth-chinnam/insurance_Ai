@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: insureai-backend
+    runtime: python
+    repo: https://github.com/vasanth-chinnam/insurance_Ai
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: VISION_MODEL
+        value: gemini-2.0-flash
+      - key: MOTOR_DEDUCTIBLE_PCT
+        value: "0.10"
+      - key: MAX_IMAGE_SIZE_MB
+        value: "10"
+    healthCheckPath: /health
