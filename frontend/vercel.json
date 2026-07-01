@@ -1,12 +1,12 @@
 {
   "rewrites": [
-    { "source": "/api/:path*",        "destination": "https://insureai-backend.onrender.com/api/:path*" },
-    { "source": "/auth/:path*",       "destination": "https://insureai-backend.onrender.com/auth/:path*" },
-    { "source": "/claims/:path*",     "destination": "https://insureai-backend.onrender.com/claims/:path*" },
-    { "source": "/fraud/:path*",      "destination": "https://insureai-backend.onrender.com/fraud/:path*" },
-    { "source": "/risk/:path*",       "destination": "https://insureai-backend.onrender.com/risk/:path*" },
-    { "source": "/renewal/:path*",    "destination": "https://insureai-backend.onrender.com/renewal/:path*" },
-    { "source": "/crop/:path*",       "destination": "https://insureai-backend.onrender.com/crop/:path*" },
-    { "source": "/automation/:path*", "destination": "https://insureai-backend.onrender.com/automation/:path*" }
+    { "source": "/api/:path*",        "destination": "https://insurance-ai-u2j4.onrender.com/api/:path*" },
+    { "source": "/auth/:path*",       "destination": "https://insurance-ai-u2j4.onrender.com/auth/:path*" },
+    { "source": "/claims/:path*",     "destination": "https://insurance-ai-u2j4.onrender.com/claims/:path*" },
+    { "source": "/fraud/:path*",      "destination": "https://insurance-ai-u2j4.onrender.com/fraud/:path*" },
+    { "source": "/risk/:path*",       "destination": "https://insurance-ai-u2j4.onrender.com/risk/:path*" },
+    { "source": "/renewal/:path*",    "destination": "https://insurance-ai-u2j4.onrender.com/renewal/:path*" },
+    { "source": "/crop/:path*",       "destination": "https://insurance-ai-u2j4.onrender.com/crop/:path*" },
+    { "source": "/automation/:path*", "destination": "https://insurance-ai-u2j4.onrender.com/automation/:path*" }
   ]
 }
