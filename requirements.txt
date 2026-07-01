@@ -4,9 +4,7 @@ pydantic
 langchain
 langchain-community
 langchain-openai
-langchain-huggingface
 langchain-text-splitters
-sentence-transformers
 openai
 qdrant-client
 pypdf

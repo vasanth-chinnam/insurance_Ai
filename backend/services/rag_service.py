@@ -5,7 +5,8 @@ from pathlib import Path
 
 from langchain_community.document_loaders import PyPDFLoader, TextLoader  # pyre-ignore
 from langchain_text_splitters import RecursiveCharacterTextSplitter  # pyre-ignore
-from langchain_huggingface import HuggingFaceEmbeddings  # pyre-ignore
+from langchain_google_genai import GoogleGenerativeAIEmbeddings  # pyre-ignore
+from langchain_openai import OpenAIEmbeddings  # pyre-ignore
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
@@ -37,6 +38,11 @@ _embeddings = None
 _qdrant: QdrantClient | None = None
 
 INSURANCE_TYPES = {"motor", "health", "travel", "crop", "general"}
+
+_STOP_WORDS = {
+    "what", "is", "the", "my", "a", "an", "does", "do", "how", "much",
+    "many", "can", "i", "in", "for", "of", "to", "and", "or", "are", "this",
+}
 
 DEFAULT_RAG_PROMPT = """You are an expert insurance policy assistant.
 Answer the user's question using ONLY the provided policy excerpts.
@@ -71,36 +77,45 @@ def get_embeddings():
     if _embeddings is not None:
         return _embeddings
 
-    try:
-        logger.info("Initializing HuggingFace embeddings...")
-        _embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
-        return _embeddings
-    except Exception as e:
-        logger.warning("HuggingFace embeddings failed: %s. Trying Gemini...", e)
-        if GOOGLE_API_KEY:
-            try:
-                from langchain_google_genai import GoogleGenerativeAIEmbeddings
-                _embeddings = GoogleGenerativeAIEmbeddings(
-                    model="models/embedding-001",
-                    google_api_key=GOOGLE_API_KEY
-                )
-                logger.info("Gemini embeddings initialized.")
-                return _embeddings
-            except Exception as ge:
-                logger.error("Gemini embeddings also failed: %s", ge)
+    # 1. Try Gemini Embeddings (Free tier, highly recommended)
+    if GOOGLE_API_KEY:
+        try:
+            logger.info("Initializing Gemini embeddings...")
+            _embeddings = GoogleGenerativeAIEmbeddings(
+                model="models/embedding-001",
+                google_api_key=GOOGLE_API_KEY
+            )
+            logger.info("SUCCESS: Gemini embeddings initialized.")
+            return _embeddings
+        except Exception as e:
+            logger.error("Failed to initialize Gemini embeddings: %s", e)
 
-        logger.warning(
-            "⚠️ MockEmbeddings active — similarity search non-functional. "
-            "Check internet or GOOGLE_API_KEY."
-        )
-        _embeddings = MockEmbeddings()
-        return _embeddings
+    # 2. Try OpenAI Embeddings
+    if OPENAI_API_KEY:
+        try:
+            logger.info("Initializing OpenAI embeddings...")
+            _embeddings = OpenAIEmbeddings(
+                model="text-embedding-ada-002",
+                openai_api_key=OPENAI_API_KEY
+            )
+            logger.info("SUCCESS: OpenAI embeddings initialized.")
+            return _embeddings
+        except Exception as e:
+            logger.error("Failed to initialize OpenAI embeddings: %s", e)
+
+    # 3. Fallback to MockEmbeddings
+    logger.warning(
+        "⚠️ MockEmbeddings active — similarity search non-functional. "
+        "Please provide GOOGLE_API_KEY or OPENAI_API_KEY for real search."
+    )
+    _embeddings = MockEmbeddings()
+    return _embeddings
 
 
 # ── Qdrant client ─────────────────────────────────────────────────────
 
 def get_qdrant() -> QdrantClient | None:
-    """Get or create the Qdrant client. Returns None if Qdrant is unreachable."""
+    """Get or create the Qdrant client. Falls back to a local disk-based client if unreachable."""
     global _qdrant
     if _qdrant is not None:
         return _qdrant
@@ -120,12 +135,29 @@ def get_qdrant() -> QdrantClient | None:
         _qdrant = client
         return _qdrant
     except Exception as e:
-        logger.error(
+        logger.warning(
             "⚠️ Cannot connect to Qdrant at %s: %s. "
-            "Make sure Docker is running: docker run -d -p 6333:6333 qdrant/qdrant",
+            "Falling back to local disk-based Qdrant client...",
             QDRANT_URL, e
         )
-        return None
+        try:
+            local_db_path = os.path.join("data", "qdrant_local")
+            os.makedirs(local_db_path, exist_ok=True)
+            client = QdrantClient(path=local_db_path)
+            existing = [c.name for c in client.get_collections().collections]
+            if QDRANT_COLLECTION not in existing:
+                client.create_collection(
+                    collection_name=QDRANT_COLLECTION,
+                    vectors_config=VectorParams(size=384, distance=Distance.COSINE),
+                )
+                logger.info("Created local Qdrant collection: %s", QDRANT_COLLECTION)
+            else:
+                logger.info("Connected to local Qdrant collection: %s", QDRANT_COLLECTION)
+            _qdrant = client
+            return _qdrant
+        except Exception as local_e:
+            logger.error("Failed to initialize local disk-based Qdrant client: %s", local_e)
+            return None
 
 
 # ── LLM chain ─────────────────────────────────────────────────────────
@@ -151,7 +183,7 @@ def _build_llm_chain() -> list:
                     temperature=0,
                     google_api_key=GOOGLE_API_KEY,
                     max_retries=1,
-                    timeout=30,
+                    timeout=4,
                 )
             })
             logger.info("Gemini added to LLM chain")
@@ -167,7 +199,7 @@ def _build_llm_chain() -> list:
                     model=CHAT_MODEL_OPENAI,
                     temperature=0,
                     max_retries=1,
-                    request_timeout=30,
+                    request_timeout=4,
                 )
             })
             logger.info("OpenAI added to LLM chain")
@@ -179,6 +211,7 @@ def _build_llm_chain() -> list:
 
 
 def reset_llm_chain():
+    """Call this if API keys change at runtime."""
     global _llm_chain
     _llm_chain = []
 
@@ -273,7 +306,7 @@ def ingest_file(file_path: str, insurance_type: str = "general") -> int:
             vector  = vector,
             payload = {
                 "text":           chunk.page_content,
-                "source":         str(path.name),
+                "source":         path.name,
                 "insurance_type": insurance_type,
                 "page":           chunk.metadata.get("page", 0),
             }
@@ -307,23 +340,23 @@ def _retrieve(question: str, insurance_type: str | None = None, k: int = RETRIEV
             )]
         )
 
-    results = client.search(
+    results = client.query_points(
         collection_name=QDRANT_COLLECTION,
-        query_vector=vector,
+        query=vector,
         limit=k,
         query_filter=search_filter,
         with_payload=True,
-    )
+    ).points
 
     # Fallback: if no results with filter, search without
     if not results and search_filter:
         logger.warning("No %s docs found — falling back to unfiltered search", insurance_type)
-        results = client.search(
+        results = client.query_points(
             collection_name=QDRANT_COLLECTION,
-            query_vector=vector,
+            query=vector,
             limit=k,
             with_payload=True,
-        )
+        ).points
 
     return results
 
@@ -404,9 +437,7 @@ def _format_extractive_answer(question: str, results: list) -> str:
     content   = results[0].payload.get("text", "").strip()
     sentences = re.split(r'(?<=[.!?])\s+', content)
 
-    stop_words = {"what", "is", "the", "my", "a", "an", "does", "do", "how", "much",
-                  "many", "can", "i", "in", "for", "of", "to", "and", "or", "are", "this"}
-    q_words = set(re.findall(r'\w+', question.lower())) - stop_words
+    q_words = set(re.findall(r'\w+', question.lower())) - _STOP_WORDS
 
     scored: list[tuple[float, str]] = []
     for s in sentences:
