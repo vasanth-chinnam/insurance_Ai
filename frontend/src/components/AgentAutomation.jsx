@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react"
+import { apiFetch } from "../utils/api"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   Sparkles, Zap, Clock, ChevronRight,
@@ -68,9 +69,8 @@ export default function AgentAutomation() {
     runLoadingSteps()
 
     try {
-      const res = await fetch("/automation/run", {
+      const res = await apiFetch("/automation/run", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: query }),
       })
       if (!res.ok) throw new Error(`Server error: ${res.status}`)

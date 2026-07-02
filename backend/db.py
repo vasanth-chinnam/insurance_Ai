@@ -3,6 +3,7 @@ import uuid
 import sqlite3
 import logging
 import json
+import contextvars
 from pathlib import Path
 from contextlib import contextmanager
 
@@ -10,6 +11,9 @@ logger = logging.getLogger(__name__)
 
 # ── Multi-Tenant Constants ────────────────────────────────────────────
 DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001"
+
+# ContextVar to store request-scoped tenant_id
+tenant_context = contextvars.ContextVar("tenant_id", default=DEFAULT_TENANT_ID)
 
 # ── Database backend detection ────────────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
@@ -22,10 +26,24 @@ def _pg_connect():
     """Create a PostgreSQL connection using psycopg2."""
     import psycopg2
     import psycopg2.extras
+    from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
+    
     url = DATABASE_URL
     # Supabase gives postgres:// but psycopg2 needs postgresql://
     if url.startswith("postgres://"):
         url = "postgresql://" + url[len("postgres://"):]
+        
+    # Clean pgbouncer parameter to prevent psycopg2 from throwing DSN parsing errors
+    try:
+        parsed = urlparse(url)
+        qparams = dict(parse_qsl(parsed.query))
+        if "pgbouncer" in qparams:
+            qparams.pop("pgbouncer", None)
+            new_query = urlencode(qparams)
+            url = urlunparse(parsed._replace(query=new_query))
+    except Exception as parse_err:
+        logger.warning("Could not parse or clean DATABASE_URL: %s", parse_err)
+        
     conn = psycopg2.connect(url)
     conn.autocommit = False
     return conn
@@ -522,7 +540,9 @@ def _init_pg():
 # ── Write helpers ──────────────────────────────────────────────────────
 
 def create_user(user_id: str, name: str, email: str = "", phone: str = "",
-                role: str = "customer", tenant_id: str = DEFAULT_TENANT_ID) -> None:
+                role: str = "customer", tenant_id: str | None = None) -> None:
+    if tenant_id is None:
+        tenant_id = tenant_context.get()
     with get_conn() as conn:
         conn.execute(
             "INSERT OR IGNORE INTO users (user_id, name, email, phone, role, tenant_id) VALUES (?, ?, ?, ?, ?, ?)",
@@ -534,8 +554,10 @@ def create_policy(
     policy_id: str, user_id: str, insurance_type: str,
     provider: str = "", sum_insured: float = 0,
     annual_premium: float = 0, years_with_provider: int = 0,
-    claim_free_years: int = 0, tenant_id: str = DEFAULT_TENANT_ID,
+    claim_free_years: int = 0, tenant_id: str | None = None,
 ) -> None:
+    if tenant_id is None:
+        tenant_id = tenant_context.get()
     with get_conn() as conn:
         conn.execute("""
             INSERT OR REPLACE INTO policies
@@ -549,8 +571,10 @@ def create_policy(
 def save_claim(
     claim_id: str, policy_id: str, amount: float,
     covered_amount: float = 0, status: str = "pending",
-    description: str = "", tenant_id: str = DEFAULT_TENANT_ID,
+    description: str = "", tenant_id: str | None = None,
 ) -> None:
+    if tenant_id is None:
+        tenant_id = tenant_context.get()
     with get_conn() as conn:
         conn.execute("""
             INSERT OR REPLACE INTO claims
@@ -562,8 +586,10 @@ def save_claim(
 def save_fraud_check(
     check_id: str, claim_id: str, score: int,
     verdict: str, reasons: list[str] = None,
-    tenant_id: str = DEFAULT_TENANT_ID,
+    tenant_id: str | None = None,
 ) -> None:
+    if tenant_id is None:
+        tenant_id = tenant_context.get()
     with get_conn() as conn:
         conn.execute("""
             INSERT OR REPLACE INTO fraud_checks
@@ -574,8 +600,10 @@ def save_fraud_check(
 
 def save_risk_profile(
     profile_id: str, user_id: str, insurance_type: str,
-    score: int, category: str, tenant_id: str = DEFAULT_TENANT_ID,
+    score: int, category: str, tenant_id: str | None = None,
 ) -> None:
+    if tenant_id is None:
+        tenant_id = tenant_context.get()
     with get_conn() as conn:
         conn.execute("""
             INSERT OR REPLACE INTO risk_profiles
@@ -587,8 +615,10 @@ def save_risk_profile(
 def save_renewal(
     renewal_id: str, policy_id: str, old_premium: float,
     new_premium: float, savings: float, new_provider: str,
-    tenant_id: str = DEFAULT_TENANT_ID,
+    tenant_id: str | None = None,
 ) -> None:
+    if tenant_id is None:
+        tenant_id = tenant_context.get()
     with get_conn() as conn:
         conn.execute("""
             INSERT OR REPLACE INTO renewal_history
@@ -645,18 +675,20 @@ def tenant_query(conn, sql: str, params: tuple,
 # ── Read helpers ───────────────────────────────────────────────────────
 
 def get_policy_by_number(policy_number: str) -> dict | None:
+    tenant_id = tenant_context.get()
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT * FROM policies WHERE policy_id = ?", (policy_number,)
+            "SELECT * FROM policies WHERE policy_id = ? AND tenant_id = ?", (policy_number, tenant_id)
         ).fetchone()
         return dict(row) if row else None
 
 
 def get_claims_for_policy(policy_id: str) -> list[dict]:
+    tenant_id = tenant_context.get()
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM claims WHERE policy_id = ? ORDER BY claim_date DESC",
-            (policy_id,)
+            "SELECT * FROM claims WHERE policy_id = ? AND tenant_id = ? ORDER BY claim_date DESC",
+            (policy_id, tenant_id)
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -667,11 +699,12 @@ def get_user_context(user_id: str | None = None, policy_number: str | None = Non
     so every agent (fraud, risk, renewal) can use REAL history
     instead of hardcoded defaults.
     """
+    tenant_id = tenant_context.get()
     with get_conn() as conn:
         policy = None
         if policy_number:
             row = conn.execute(
-                "SELECT * FROM policies WHERE policy_id = ?", (policy_number,)
+                "SELECT * FROM policies WHERE policy_id = ? AND tenant_id = ?", (policy_number, tenant_id)
             ).fetchone()
             policy = dict(row) if row else None
             if policy:
@@ -680,31 +713,31 @@ def get_user_context(user_id: str | None = None, policy_number: str | None = Non
         user = None
         if user_id:
             row = conn.execute(
-                "SELECT * FROM users WHERE user_id = ?", (user_id,)
+                "SELECT * FROM users WHERE user_id = ? AND tenant_id = ?", (user_id, tenant_id)
             ).fetchone()
             user = dict(row) if row else None
 
         claims = []
         if policy:
             rows = conn.execute(
-                "SELECT * FROM claims WHERE policy_id = ? ORDER BY claim_date DESC",
-                (policy["policy_id"],)
+                "SELECT * FROM claims WHERE policy_id = ? AND tenant_id = ? ORDER BY claim_date DESC",
+                (policy["policy_id"], tenant_id)
             ).fetchall()
             claims = [dict(r) for r in rows]
 
         risk_profile = None
         if user_id:
             row = conn.execute(
-                "SELECT * FROM risk_profiles WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
-                (user_id,)
+                "SELECT * FROM risk_profiles WHERE user_id = ? AND tenant_id = ? ORDER BY created_at DESC LIMIT 1",
+                (user_id, tenant_id)
             ).fetchone()
             risk_profile = dict(row) if row else None
 
         fraud_checks = []
         for claim in claims:
             rows = conn.execute(
-                "SELECT * FROM fraud_checks WHERE claim_id = ?",
-                (claim["claim_id"],)
+                "SELECT * FROM fraud_checks WHERE claim_id = ? AND tenant_id = ?",
+                (claim["claim_id"], tenant_id)
             ).fetchall()
             fraud_checks.extend([dict(r) for r in rows])
 

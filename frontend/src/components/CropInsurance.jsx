@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { apiFetch } from "../utils/api"
 
 const PAYOUT_COLORS = {
   "No Payout":      { color: "#16A34A", bg: "#DCFCE7", border: "#86EFAC" },
@@ -35,7 +36,7 @@ export default function CropInsurance() {
 
   // Load farmers on mount
   useEffect(() => {
-    fetch("/crop/farmers")
+    apiFetch("/crop/farmers")
       .then(r => r.json())
       .then(data => {
         setFarmers(data)
@@ -67,9 +68,8 @@ export default function CropInsurance() {
     setError(null)
     runLoadingSteps()
     try {
-      const res = await fetch("/crop/analyze", {
+      const res = await apiFetch("/crop/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           farmer_id:        farmerId,
           location:         location,

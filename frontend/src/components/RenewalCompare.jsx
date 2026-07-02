@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { apiFetch } from "../utils/api"
 
 const INSURANCE_TYPES = [
   { value: "motor",  label: "Motor",  icon: "🚗" },
@@ -43,9 +44,8 @@ export default function RenewalCompare() {
     setError(null)
     runLoadingSteps()
     try {
-      const res = await fetch("/renewal/negotiate", {
+      const res = await apiFetch("/renewal/negotiate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           current_policy: {
             provider_name:          form.provider_name,

@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { apiFetch } from "../utils/api"
 import { motion, AnimatePresence } from "framer-motion"
 import { Search, AlertTriangle, CheckCircle, Shield, Clock, FileText } from "lucide-react"
 import InsuranceTypeSelector from "./InsuranceTypeSelector"
@@ -53,9 +54,8 @@ export default function FraudDetection({ showToast }) {
     setStep(0)
     runLoadingSteps()
     try {
-      const res = await fetch(`${API_BASE}/fraud/analyze`, {
+      const res = await apiFetch(`${API_BASE}/fraud/analyze`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
           claim_amount:        parseFloat(form.claim_amount),

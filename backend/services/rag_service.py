@@ -296,15 +296,19 @@ def _try_llm_chain(context: str, question: str, prompt_template: str | None = No
 
 # ── Ingestion ─────────────────────────────────────────────────────────
 
-def ingest_file(file_path: str, insurance_type: str = "general") -> int:
+def ingest_file(file_path: str, insurance_type: str = "general", tenant_id: str | None = None) -> int:
     """
-    Ingest a document into Qdrant, tagged with insurance_type.
+    Ingest a document into Qdrant, tagged with insurance_type and tenant_id.
     insurance_type: motor | health | travel | crop | general
     """
     client = get_qdrant()
     if client is None:
         logger.error("Qdrant unavailable — cannot ingest %s", file_path)
         return 0
+
+    if tenant_id is None:
+        from backend.db import tenant_context
+        tenant_id = tenant_context.get()
 
     insurance_type = insurance_type.lower()
     if insurance_type not in INSURANCE_TYPES:
@@ -347,54 +351,121 @@ def ingest_file(file_path: str, insurance_type: str = "general") -> int:
                 "source":         path.name,
                 "insurance_type": insurance_type,
                 "page":           chunk.metadata.get("page", 0),
+                "tenant_id":      str(tenant_id),
             }
         ))
 
-    client.upsert(collection_name=QDRANT_COLLECTION, points=points)
+    try:
+        client.upsert(collection_name=QDRANT_COLLECTION, points=points)
+    except Exception as e:
+        if "could not broadcast input array" in str(e) or "dimension mismatch" in str(e).lower():
+            logger.warning("Qdrant collection point dimension mismatch detected on upsert. Recreating collection...")
+            try:
+                client.delete_collection(QDRANT_COLLECTION)
+            except Exception:
+                pass
+            client.create_collection(
+                collection_name=QDRANT_COLLECTION,
+                vectors_config=VectorParams(size=len(points[0].vector), distance=Distance.COSINE),
+            )
+            # Re-try upsert
+            client.upsert(collection_name=QDRANT_COLLECTION, points=points)
+        else:
+            raise
+            
     logger.info("Ingested %d chunks [%s] from %s", len(chunks), insurance_type, file_path)
     return len(chunks)
 
 
 # ── Retrieval ─────────────────────────────────────────────────────────
 
-def _retrieve(question: str, insurance_type: str | None = None, k: int = RETRIEVER_K) -> list:
+def _retrieve(question: str, insurance_type: str | None = None, k: int = RETRIEVER_K, tenant_id: str | None = None) -> list:
     """
     Retrieve top-k chunks. If insurance_type given, filter to that type only.
+    Filters strictly by tenant_id to isolate data.
     Falls back to unfiltered search if filtered results are empty.
     """
     client = get_qdrant()
     if client is None:
         return []
 
+    if tenant_id is None:
+        from backend.db import tenant_context
+        tenant_id = tenant_context.get()
+
     emb    = get_embeddings()
     vector = emb.embed_query(question)
 
-    search_filter = None
+    must_conditions = []
     if insurance_type and insurance_type.lower() in INSURANCE_TYPES:
-        search_filter = Filter(
-            must=[FieldCondition(
-                key="insurance_type",
-                match=MatchValue(value=insurance_type.lower())
-            )]
-        )
+        must_conditions.append(FieldCondition(
+            key="insurance_type",
+            match=MatchValue(value=insurance_type.lower())
+        ))
+    if tenant_id:
+        must_conditions.append(FieldCondition(
+            key="tenant_id",
+            match=MatchValue(value=str(tenant_id))
+        ))
 
-    results = client.query_points(
-        collection_name=QDRANT_COLLECTION,
-        query=vector,
-        limit=k,
-        query_filter=search_filter,
-        with_payload=True,
-    ).points
+    search_filter = Filter(must=must_conditions) if must_conditions else None
 
-    # Fallback: if no results with filter, search without
-    if not results and search_filter:
-        logger.warning("No %s docs found — falling back to unfiltered search", insurance_type)
+    try:
         results = client.query_points(
             collection_name=QDRANT_COLLECTION,
             query=vector,
             limit=k,
+            query_filter=search_filter,
             with_payload=True,
         ).points
+    except Exception as e:
+        if "could not broadcast input array" in str(e) or "dimension mismatch" in str(e).lower():
+            logger.warning("Qdrant collection point dimension mismatch detected on query. Recreating collection...")
+            try:
+                client.delete_collection(QDRANT_COLLECTION)
+            except Exception:
+                pass
+            client.create_collection(
+                collection_name=QDRANT_COLLECTION,
+                vectors_config=VectorParams(size=len(vector), distance=Distance.COSINE),
+            )
+            return []
+        else:
+            raise
+
+    # Fallback: if no results with filter, search without insurance_type but STILL preserve tenant_id
+    if not results and search_filter:
+        logger.warning("No %s docs found — falling back to unfiltered search", insurance_type)
+        fallback_conditions = []
+        if tenant_id:
+            fallback_conditions.append(FieldCondition(
+                key="tenant_id",
+                match=MatchValue(value=str(tenant_id))
+            ))
+        fallback_filter = Filter(must=fallback_conditions) if fallback_conditions else None
+        
+        try:
+            results = client.query_points(
+                collection_name=QDRANT_COLLECTION,
+                query=vector,
+                limit=k,
+                query_filter=fallback_filter,
+                with_payload=True,
+            ).points
+        except Exception as e:
+            if "could not broadcast input array" in str(e) or "dimension mismatch" in str(e).lower():
+                logger.warning("Qdrant collection point dimension mismatch detected on fallback query. Recreating collection...")
+                try:
+                    client.delete_collection(QDRANT_COLLECTION)
+                except Exception:
+                    pass
+                client.create_collection(
+                    collection_name=QDRANT_COLLECTION,
+                    vectors_config=VectorParams(size=len(vector), distance=Distance.COSINE),
+                )
+                return []
+            else:
+                raise
 
     return results
 
@@ -512,9 +583,9 @@ def _format_extractive_answer(question: str, results: list) -> str:
 
 # ── Main query entry point ────────────────────────────────────────────
 
-def query_rag(question: str, insurance_type: str | None = None) -> dict:
+def query_rag(question: str, insurance_type: str | None = None, tenant_id: str | None = None) -> dict:
     """
-    RAG query with optional insurance_type filtering.
+    RAG query with optional insurance_type filtering and tenant isolation.
     Returns answer, sources, confidence, degraded.
     """
     client = get_qdrant()
@@ -531,6 +602,10 @@ def query_rag(question: str, insurance_type: str | None = None) -> dict:
             "degraded": True,
         }
 
+    if tenant_id is None:
+        from backend.db import tenant_context
+        tenant_id = tenant_context.get()
+
     # Check if collection has any documents
     count = client.count(collection_name=QDRANT_COLLECTION).count
     if count == 0:
@@ -541,7 +616,7 @@ def query_rag(question: str, insurance_type: str | None = None) -> dict:
             "degraded": False,
         }
 
-    results = _retrieve(question, insurance_type)
+    results = _retrieve(question, insurance_type, tenant_id=tenant_id)
 
     if not results:
         return {

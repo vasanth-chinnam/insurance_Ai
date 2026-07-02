@@ -15,9 +15,14 @@ export default function RegisterPage({ onSwitch }) {
     setError(null)
     setLoad(true)
     try {
+      const headers = { "Content-Type": "application/json" }
+      const tid = localStorage.getItem("insureai_tenant_id")
+      if (tid) {
+        headers["X-Tenant-ID"] = tid
+      }
       const res = await fetch("/auth/google", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ credential: credentialResponse.credential }),
       })
       if (!res.ok) throw new Error((await res.json()).detail || "Google auth failed")
@@ -34,6 +39,12 @@ export default function RegisterPage({ onSwitch }) {
   }
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const tid = params.get("tenant_id")
+    if (tid) {
+      localStorage.setItem("insureai_tenant_id", tid)
+    }
+
     let interval
     const initGoogle = () => {
       if (window.google) {
@@ -85,9 +96,14 @@ export default function RegisterPage({ onSwitch }) {
     setLoad(true)
     setError(null)
     try {
+      const headers = { "Content-Type": "application/json" }
+      const tid = localStorage.getItem("insureai_tenant_id")
+      if (tid) {
+        headers["X-Tenant-ID"] = tid
+      }
       const res = await fetch("/auth/register", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           name: form.name, email: form.email,
           phone: form.phone, password: form.password,

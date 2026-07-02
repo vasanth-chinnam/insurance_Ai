@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { apiFetch } from "../utils/api"
 
 const RISK_COLORS = {
   Low:       { color: "#16A34A", bg: "#DCFCE7", border: "#86EFAC" },
@@ -281,9 +282,8 @@ export default function RiskProfiler() {
         insurance_type: insuranceType,
         [insuranceType]: formData,
       }
-      const res = await fetch("/risk/profile", {
+      const res = await apiFetch("/risk/profile", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       })
       if (!res.ok) throw new Error(`Server error: ${res.status}`)

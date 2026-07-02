@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { apiFetch } from '../utils/api'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ShieldCheck, MessageSquare, FileText, Paperclip, Send, Trash2, Copy, Check } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
@@ -50,9 +51,8 @@ export default function PolicyChat({ messages, setMessages, API_BASE, showToast 
     setLoading(true)
 
     try {
-      const res = await fetch(`${API_BASE}/chat`, {
+      const res = await apiFetch(`${API_BASE}/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, insurance_type: insuranceType }),
       })
       const data = await res.json()
@@ -98,7 +98,7 @@ export default function PolicyChat({ messages, setMessages, API_BASE, showToast 
     setMessages(prev => [...prev, sysMsg])
 
     try {
-      const res = await fetch(`${API_BASE}/upload`, {
+      const res = await apiFetch(`${API_BASE}/upload`, {
         method: 'POST',
         body: formData,
       })
@@ -133,7 +133,7 @@ export default function PolicyChat({ messages, setMessages, API_BASE, showToast 
   const clearChat = async () => {
     setMessages([])
     try {
-      await fetch(`${API_BASE}/history`, { method: 'DELETE' })
+      await apiFetch(`${API_BASE}/history`, { method: 'DELETE' })
     } catch (err) { }
   }
 

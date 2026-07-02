@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { apiFetch } from '../utils/api'
 import { motion, AnimatePresence } from 'framer-motion'
 import { UploadCloud, CheckCircle, AlertTriangle, FileText, Camera, ShieldCheck, Car } from 'lucide-react'
 import confetti from 'canvas-confetti'
@@ -299,7 +300,7 @@ export default function MotorClaimsForm({ API_BASE, showToast }) {
 
       try {
         const claimsEndpoint = API_BASE.replace('/api', '') + '/claims/motor'
-        const res = await fetch(claimsEndpoint, {
+        const res = await apiFetch(claimsEndpoint, {
           method: 'POST',
           body: payload
         })
@@ -328,9 +329,8 @@ export default function MotorClaimsForm({ API_BASE, showToast }) {
     } else if (insuranceType === 'health') {
       try {
         const claimsEndpoint = API_BASE.replace('/api', '') + '/claims/health'
-        const res = await fetch(claimsEndpoint, {
+        const res = await apiFetch(claimsEndpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(healthFormData)
         })
         const data = await res.json()
@@ -351,9 +351,8 @@ export default function MotorClaimsForm({ API_BASE, showToast }) {
     } else if (insuranceType === 'travel') {
       try {
         const claimsEndpoint = API_BASE.replace('/api', '') + '/claims/travel'
-        const res = await fetch(claimsEndpoint, {
+        const res = await apiFetch(claimsEndpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(travelFormData)
         })
         const data = await res.json()
