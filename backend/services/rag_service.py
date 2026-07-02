@@ -82,7 +82,7 @@ def get_embeddings():
         try:
             logger.info("Initializing Gemini embeddings...")
             _embeddings = GoogleGenerativeAIEmbeddings(
-                model="text-embedding-004",
+                model="models/gemini-embedding-001",
                 google_api_key=GOOGLE_API_KEY
             )
             logger.info("SUCCESS: Gemini embeddings initialized.")
