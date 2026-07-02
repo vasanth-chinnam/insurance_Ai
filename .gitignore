@@ -7,6 +7,7 @@ data/*.db
 backend/data/
 data/vector_store/
 data/policies/
+data/qdrant_local/
 uploads/
 data/*.log
 

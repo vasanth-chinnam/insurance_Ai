@@ -1,4 +1,5 @@
 import os
+import uuid
 import sqlite3
 import logging
 import json
@@ -6,6 +7,9 @@ from pathlib import Path
 from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
+
+# ── Multi-Tenant Constants ────────────────────────────────────────────
+DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001"
 
 # ── Database backend detection ────────────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
@@ -213,25 +217,48 @@ def init_db():
 
 
 def _init_sqlite():
-    """SQLite schema — original behaviour."""
+    """SQLite schema — with multi-tenant support."""
     with get_conn() as conn:
         c = conn.cursor()
 
+        # Create tenants table
         c.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id     TEXT PRIMARY KEY,
-                name        TEXT NOT NULL,
-                email       TEXT,
-                phone       TEXT,
-                password_hash TEXT,
-                created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+            CREATE TABLE IF NOT EXISTS tenants (
+                id            TEXT PRIMARY KEY,
+                name          TEXT NOT NULL,
+                logo_url      TEXT,
+                primary_color TEXT DEFAULT '#2563EB',
+                domain        TEXT UNIQUE,
+                created_at    TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
-        try:
-            c.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
-        except sqlite3.OperationalError:
-            pass
+        # Seed default tenant
+        c.execute("""
+            INSERT OR IGNORE INTO tenants (id, name, primary_color)
+            VALUES (?, 'InsureAI Default', '#2563EB')
+        """, (DEFAULT_TENANT_ID,))
+
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id       TEXT PRIMARY KEY,
+                name          TEXT NOT NULL,
+                email         TEXT,
+                phone         TEXT,
+                password_hash TEXT,
+                role          TEXT DEFAULT 'customer',
+                tenant_id     TEXT,
+                created_at    TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+            )
+        """)
+
+        # Add columns if migrating existing SQLite DB
+        for col, col_type in [("password_hash", "TEXT"), ("role", "TEXT DEFAULT 'customer'"), ("tenant_id", "TEXT")]:
+            try:
+                c.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type}")
+            except sqlite3.OperationalError:
+                pass
 
         c.execute("""
             CREATE TABLE IF NOT EXISTS policies (
@@ -243,23 +270,35 @@ def _init_sqlite():
                 annual_premium       REAL,
                 years_with_provider  INTEGER DEFAULT 0,
                 claim_free_years     INTEGER DEFAULT 0,
+                tenant_id            TEXT,
                 created_at           TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(user_id)
+                FOREIGN KEY (user_id) REFERENCES users(user_id),
+                FOREIGN KEY (tenant_id) REFERENCES tenants(id)
             )
         """)
+        try:
+            c.execute("ALTER TABLE policies ADD COLUMN tenant_id TEXT")
+        except sqlite3.OperationalError:
+            pass
 
         c.execute("""
             CREATE TABLE IF NOT EXISTS claims (
-                claim_id     TEXT PRIMARY KEY,
-                policy_id    TEXT NOT NULL,
-                amount       REAL,
+                claim_id       TEXT PRIMARY KEY,
+                policy_id      TEXT NOT NULL,
+                amount         REAL,
                 covered_amount REAL,
-                status       TEXT DEFAULT 'pending',
-                description  TEXT,
-                claim_date   TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (policy_id) REFERENCES policies(policy_id)
+                status         TEXT DEFAULT 'pending',
+                description    TEXT,
+                tenant_id      TEXT,
+                claim_date     TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (policy_id) REFERENCES policies(policy_id),
+                FOREIGN KEY (tenant_id) REFERENCES tenants(id)
             )
         """)
+        try:
+            c.execute("ALTER TABLE claims ADD COLUMN tenant_id TEXT")
+        except sqlite3.OperationalError:
+            pass
 
         c.execute("""
             CREATE TABLE IF NOT EXISTS fraud_checks (
@@ -268,10 +307,16 @@ def _init_sqlite():
                 score        INTEGER,
                 verdict      TEXT,
                 reasons      TEXT,
+                tenant_id    TEXT,
                 checked_at   TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (claim_id) REFERENCES claims(claim_id)
+                FOREIGN KEY (claim_id) REFERENCES claims(claim_id),
+                FOREIGN KEY (tenant_id) REFERENCES tenants(id)
             )
         """)
+        try:
+            c.execute("ALTER TABLE fraud_checks ADD COLUMN tenant_id TEXT")
+        except sqlite3.OperationalError:
+            pass
 
         c.execute("""
             CREATE TABLE IF NOT EXISTS risk_profiles (
@@ -280,10 +325,16 @@ def _init_sqlite():
                 insurance_type  TEXT,
                 score           INTEGER,
                 category        TEXT,
+                tenant_id       TEXT,
                 created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(user_id)
+                FOREIGN KEY (user_id) REFERENCES users(user_id),
+                FOREIGN KEY (tenant_id) REFERENCES tenants(id)
             )
         """)
+        try:
+            c.execute("ALTER TABLE risk_profiles ADD COLUMN tenant_id TEXT")
+        except sqlite3.OperationalError:
+            pass
 
         c.execute("""
             CREATE TABLE IF NOT EXISTS renewal_history (
@@ -293,19 +344,48 @@ def _init_sqlite():
                 new_premium  REAL,
                 savings      REAL,
                 new_provider TEXT,
+                tenant_id    TEXT,
                 created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (policy_id) REFERENCES policies(policy_id)
+                FOREIGN KEY (policy_id) REFERENCES policies(policy_id),
+                FOREIGN KEY (tenant_id) REFERENCES tenants(id)
             )
         """)
+        try:
+            c.execute("ALTER TABLE renewal_history ADD COLUMN tenant_id TEXT")
+        except sqlite3.OperationalError:
+            pass
 
-        logger.info("SQLite database initialized at %s", DB_PATH)
+        # Backfill default tenant for SQLite
+        for table in ["users", "policies", "claims", "fraud_checks", "risk_profiles", "renewal_history"]:
+            c.execute(f"UPDATE {table} SET tenant_id = ? WHERE tenant_id IS NULL", (DEFAULT_TENANT_ID,))
+
+        logger.info("SQLite database initialized at %s with multi-tenant support", DB_PATH)
 
 
 def _init_pg():
-    """PostgreSQL schema — Supabase compatible."""
+    """PostgreSQL schema — Supabase compatible, with multi-tenant support."""
     conn = _pg_connect()
     try:
         cur = conn.cursor()
+
+        # ── Tenants table (must be first — other tables reference it) ──
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS tenants (
+                id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                name          TEXT NOT NULL,
+                logo_url      TEXT,
+                primary_color TEXT DEFAULT '#2563EB',
+                domain        TEXT UNIQUE,
+                created_at    TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+
+        # Seed default tenant
+        cur.execute("""
+            INSERT INTO tenants (id, name, primary_color)
+            VALUES (%s, 'InsureAI Default', '#2563EB')
+            ON CONFLICT DO NOTHING
+        """, (DEFAULT_TENANT_ID,))
 
         cur.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -314,19 +394,22 @@ def _init_pg():
                 email         TEXT,
                 phone         TEXT,
                 password_hash TEXT,
+                role          TEXT DEFAULT 'customer',
+                tenant_id     UUID REFERENCES tenants(id),
                 created_at    TIMESTAMP DEFAULT NOW()
             )
         """)
 
-        # Safe column migration
-        cur.execute("""
-            DO $$
-            BEGIN
-                ALTER TABLE users ADD COLUMN password_hash TEXT;
-            EXCEPTION WHEN duplicate_column THEN
-                NULL;
-            END $$;
-        """)
+        # Safe column migrations for existing tables
+        for col, default in [("password_hash", "TEXT"), ("role", "TEXT DEFAULT 'customer'"), ("tenant_id", "UUID REFERENCES tenants(id)")]:
+            cur.execute(f"""
+                DO $$
+                BEGIN
+                    ALTER TABLE users ADD COLUMN {col} {default};
+                EXCEPTION WHEN duplicate_column THEN
+                    NULL;
+                END $$;
+            """)
 
         cur.execute("""
             CREATE TABLE IF NOT EXISTS policies (
@@ -338,8 +421,15 @@ def _init_pg():
                 annual_premium       DOUBLE PRECISION,
                 years_with_provider  INTEGER DEFAULT 0,
                 claim_free_years     INTEGER DEFAULT 0,
+                tenant_id            UUID REFERENCES tenants(id),
                 created_at           TIMESTAMP DEFAULT NOW()
             )
+        """)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE policies ADD COLUMN tenant_id UUID REFERENCES tenants(id);
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$;
         """)
 
         cur.execute("""
@@ -350,8 +440,15 @@ def _init_pg():
                 covered_amount DOUBLE PRECISION,
                 status         TEXT DEFAULT 'pending',
                 description    TEXT,
+                tenant_id      UUID REFERENCES tenants(id),
                 claim_date     TIMESTAMP DEFAULT NOW()
             )
+        """)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE claims ADD COLUMN tenant_id UUID REFERENCES tenants(id);
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$;
         """)
 
         cur.execute("""
@@ -361,8 +458,15 @@ def _init_pg():
                 score        INTEGER,
                 verdict      TEXT,
                 reasons      TEXT,
+                tenant_id    UUID REFERENCES tenants(id),
                 checked_at   TIMESTAMP DEFAULT NOW()
             )
+        """)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE fraud_checks ADD COLUMN tenant_id UUID REFERENCES tenants(id);
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$;
         """)
 
         cur.execute("""
@@ -372,8 +476,15 @@ def _init_pg():
                 insurance_type  TEXT,
                 score           INTEGER,
                 category        TEXT,
+                tenant_id       UUID REFERENCES tenants(id),
                 created_at      TIMESTAMP DEFAULT NOW()
             )
+        """)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE risk_profiles ADD COLUMN tenant_id UUID REFERENCES tenants(id);
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$;
         """)
 
         cur.execute("""
@@ -384,12 +495,23 @@ def _init_pg():
                 new_premium  DOUBLE PRECISION,
                 savings      DOUBLE PRECISION,
                 new_provider TEXT,
+                tenant_id    UUID REFERENCES tenants(id),
                 created_at   TIMESTAMP DEFAULT NOW()
             )
         """)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE renewal_history ADD COLUMN tenant_id UUID REFERENCES tenants(id);
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$;
+        """)
+
+        # Backfill: set default tenant on any rows missing tenant_id
+        for table in ["users", "policies", "claims", "fraud_checks", "risk_profiles", "renewal_history"]:
+            cur.execute(f"UPDATE {table} SET tenant_id = %s WHERE tenant_id IS NULL", (DEFAULT_TENANT_ID,))
 
         conn.commit()
-        logger.info("PostgreSQL database initialized (Supabase)")
+        logger.info("PostgreSQL database initialized with multi-tenant support (Supabase)")
     except Exception:
         conn.rollback()
         raise
@@ -399,11 +521,12 @@ def _init_pg():
 
 # ── Write helpers ──────────────────────────────────────────────────────
 
-def create_user(user_id: str, name: str, email: str = "", phone: str = "") -> None:
+def create_user(user_id: str, name: str, email: str = "", phone: str = "",
+                role: str = "customer", tenant_id: str = DEFAULT_TENANT_ID) -> None:
     with get_conn() as conn:
         conn.execute(
-            "INSERT OR IGNORE INTO users (user_id, name, email, phone) VALUES (?, ?, ?, ?)",
-            (user_id, name, email, phone)
+            "INSERT OR IGNORE INTO users (user_id, name, email, phone, role, tenant_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, name, email, phone, role, tenant_id)
         )
 
 
@@ -411,65 +534,112 @@ def create_policy(
     policy_id: str, user_id: str, insurance_type: str,
     provider: str = "", sum_insured: float = 0,
     annual_premium: float = 0, years_with_provider: int = 0,
-    claim_free_years: int = 0,
+    claim_free_years: int = 0, tenant_id: str = DEFAULT_TENANT_ID,
 ) -> None:
     with get_conn() as conn:
         conn.execute("""
             INSERT OR REPLACE INTO policies
             (policy_id, user_id, insurance_type, provider, sum_insured,
-             annual_premium, years_with_provider, claim_free_years)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             annual_premium, years_with_provider, claim_free_years, tenant_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (policy_id, user_id, insurance_type, provider, sum_insured,
-              annual_premium, years_with_provider, claim_free_years))
+              annual_premium, years_with_provider, claim_free_years, tenant_id))
 
 
 def save_claim(
     claim_id: str, policy_id: str, amount: float,
     covered_amount: float = 0, status: str = "pending",
-    description: str = "",
+    description: str = "", tenant_id: str = DEFAULT_TENANT_ID,
 ) -> None:
     with get_conn() as conn:
         conn.execute("""
             INSERT OR REPLACE INTO claims
-            (claim_id, policy_id, amount, covered_amount, status, description)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (claim_id, policy_id, amount, covered_amount, status, description))
+            (claim_id, policy_id, amount, covered_amount, status, description, tenant_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (claim_id, policy_id, amount, covered_amount, status, description, tenant_id))
 
 
 def save_fraud_check(
     check_id: str, claim_id: str, score: int,
     verdict: str, reasons: list[str] = None,
+    tenant_id: str = DEFAULT_TENANT_ID,
 ) -> None:
     with get_conn() as conn:
         conn.execute("""
             INSERT OR REPLACE INTO fraud_checks
-            (check_id, claim_id, score, verdict, reasons)
-            VALUES (?, ?, ?, ?, ?)
-        """, (check_id, claim_id, score, verdict, json.dumps(reasons or [])))
+            (check_id, claim_id, score, verdict, reasons, tenant_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (check_id, claim_id, score, verdict, json.dumps(reasons or []), tenant_id))
 
 
 def save_risk_profile(
     profile_id: str, user_id: str, insurance_type: str,
-    score: int, category: str,
+    score: int, category: str, tenant_id: str = DEFAULT_TENANT_ID,
 ) -> None:
     with get_conn() as conn:
         conn.execute("""
             INSERT OR REPLACE INTO risk_profiles
-            (profile_id, user_id, insurance_type, score, category)
-            VALUES (?, ?, ?, ?, ?)
-        """, (profile_id, user_id, insurance_type, score, category))
+            (profile_id, user_id, insurance_type, score, category, tenant_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (profile_id, user_id, insurance_type, score, category, tenant_id))
 
 
 def save_renewal(
     renewal_id: str, policy_id: str, old_premium: float,
     new_premium: float, savings: float, new_provider: str,
+    tenant_id: str = DEFAULT_TENANT_ID,
 ) -> None:
     with get_conn() as conn:
         conn.execute("""
             INSERT OR REPLACE INTO renewal_history
-            (renewal_id, policy_id, old_premium, new_premium, savings, new_provider)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (renewal_id, policy_id, old_premium, new_premium, savings, new_provider))
+            (renewal_id, policy_id, old_premium, new_premium, savings, new_provider, tenant_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (renewal_id, policy_id, old_premium, new_premium, savings, new_provider, tenant_id))
+
+
+# ── Tenant helpers ─────────────────────────────────────────────────────
+
+def get_tenant_by_domain(domain: str) -> dict | None:
+    """Look up a tenant by their custom domain/subdomain."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM tenants WHERE domain = ?", (domain,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_tenant_by_id(tenant_id: str) -> dict | None:
+    """Look up a tenant by their UUID."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM tenants WHERE id = ?", (tenant_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def create_tenant(name: str, domain: str = None,
+                  logo_url: str = "", primary_color: str = "#2563EB") -> dict:
+    """Create a new tenant and return its record."""
+    tenant_id = str(uuid.uuid4())
+    with get_conn() as conn:
+        conn.execute("""
+            INSERT INTO tenants (id, name, domain, logo_url, primary_color)
+            VALUES (?, ?, ?, ?, ?)
+        """, (tenant_id, name, domain, logo_url, primary_color))
+    return {"id": tenant_id, "name": name, "domain": domain}
+
+
+def tenant_query(conn, sql: str, params: tuple,
+                 tenant_id: str = DEFAULT_TENANT_ID) -> list:
+    """
+    Automatically appends tenant_id filter to any SELECT query.
+    Use this instead of raw queries to enforce tenant isolation.
+    """
+    if "WHERE" in sql.upper():
+        sql += " AND tenant_id = ?"
+    else:
+        sql += " WHERE tenant_id = ?"
+    return conn.execute(sql, params + (tenant_id,)).fetchall()
 
 
 # ── Read helpers ───────────────────────────────────────────────────────

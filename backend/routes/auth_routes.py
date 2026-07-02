@@ -3,9 +3,10 @@ import base64
 import json
 import logging
 import hashlib
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
-from backend.db import get_conn
+from backend.db import get_conn, DEFAULT_TENANT_ID
+from backend.auth import create_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -42,14 +43,16 @@ def decode_google_credential(credential: str) -> dict:
         raise HTTPException(status_code=400, detail="Invalid Google credentials format")
 
 @router.post("/google")
-def google_auth(req: GoogleAuthRequest):
-    payload = decode_google_credential(req.credential)
+def google_auth(req_body: GoogleAuthRequest, req: Request):
+    payload = decode_google_credential(req_body.credential)
     email = payload.get("email")
     name = payload.get("name", "Google User")
     avatar = payload.get("picture", "")
 
     if not email:
         raise HTTPException(status_code=400, detail="Google authentication did not provide email")
+
+    tenant_id = getattr(req.state, "tenant_id", DEFAULT_TENANT_ID)
 
     with get_conn() as conn:
         c = conn.cursor()
@@ -59,27 +62,34 @@ def google_auth(req: GoogleAuthRequest):
         if row:
             user_id = row["user_id"]
             name = row["name"]
+            role = row["role"] if "role" in row and row["role"] else "customer"
+            user_tenant_id = row["tenant_id"] if "tenant_id" in row and row["tenant_id"] else tenant_id
         else:
             user_id = "U" + str(uuid.uuid4().hex[:8]).upper()
+            role = "customer"
+            user_tenant_id = tenant_id
             c.execute(
-                "INSERT INTO users (user_id, name, email, phone, password_hash) VALUES (?, ?, ?, ?, ?)",
-                (user_id, name, email, "", ""),
+                "INSERT INTO users (user_id, name, email, phone, password_hash, role, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_id, name, email, "", "", role, user_tenant_id),
             )
             logger.info("Created new user via Google Sign-In: %s (%s)", name, email)
 
-    # Return JWT token (mock) and profile details
+    token = create_token(user_id, email, role, user_tenant_id)
     return {
-        "token": f"mock-google-token-{user_id}",
+        "token": token,
         "name": name,
         "email": email,
-        "role": "user",
+        "role": role,
         "avatar": avatar,
+        "tenant_id": user_tenant_id,
     }
 
 @router.post("/login")
-def login(req: LoginRequest):
-    email = req.email.strip().lower()
-    password_hash = hash_password(req.password)
+def login(req_body: LoginRequest, req: Request):
+    email = req_body.email.strip().lower()
+    password_hash = hash_password(req_body.password)
+
+    tenant_id = getattr(req.state, "tenant_id", DEFAULT_TENANT_ID)
 
     with get_conn() as conn:
         c = conn.cursor()
@@ -87,7 +97,6 @@ def login(req: LoginRequest):
         row = c.fetchone()
 
         if not row:
-            # Check username match if username was stored in name column
             c.execute("SELECT * FROM users WHERE LOWER(name) = ?", (email,))
             row = c.fetchone()
 
@@ -97,21 +106,27 @@ def login(req: LoginRequest):
         user_id = row["user_id"]
         name = row["name"]
         email_val = row["email"] or email
+        role = row["role"] if "role" in row and row["role"] else "customer"
+        user_tenant_id = row["tenant_id"] if "tenant_id" in row and row["tenant_id"] else tenant_id
 
+    token = create_token(user_id, email_val, role, user_tenant_id)
     return {
-        "token": f"mock-login-token-{user_id}",
+        "token": token,
         "name": name,
         "email": email_val,
-        "role": "user",
+        "role": role,
         "avatar": "",
+        "tenant_id": user_tenant_id,
     }
 
 @router.post("/register")
-def register(req: RegisterRequest):
-    email = req.email.strip().lower()
-    name = req.name.strip()
-    phone = req.phone.strip() if req.phone else ""
-    password_hash = hash_password(req.password)
+def register(req_body: RegisterRequest, req: Request):
+    email = req_body.email.strip().lower()
+    name = req_body.name.strip()
+    phone = req_body.phone.strip() if req_body.phone else ""
+    password_hash = hash_password(req_body.password)
+
+    tenant_id = getattr(req.state, "tenant_id", DEFAULT_TENANT_ID)
 
     with get_conn() as conn:
         c = conn.cursor()
@@ -120,16 +135,20 @@ def register(req: RegisterRequest):
             raise HTTPException(status_code=400, detail="User with this email already registered")
 
         user_id = "U" + str(uuid.uuid4().hex[:8]).upper()
+        role = "customer"
         c.execute(
-            "INSERT INTO users (user_id, name, email, phone, password_hash) VALUES (?, ?, ?, ?, ?)",
-            (user_id, name, email, phone, password_hash),
+            "INSERT INTO users (user_id, name, email, phone, password_hash, role, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user_id, name, email, phone, password_hash, role, tenant_id),
         )
         logger.info("Registered new user: %s (%s)", name, email)
 
+    token = create_token(user_id, email, role, tenant_id)
     return {
-        "token": f"mock-register-token-{user_id}",
+        "token": token,
         "name": name,
         "email": email,
-        "role": "user",
+        "role": role,
         "avatar": "",
+        "tenant_id": tenant_id,
     }
+

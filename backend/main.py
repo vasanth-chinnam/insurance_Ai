@@ -55,6 +55,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AI Insurance Platform", lifespan=lifespan)
 
+from starlette.middleware.base import BaseHTTPMiddleware
+from backend.middleware.tenant import tenant_middleware
+
+# Register tenant middleware
+app.add_middleware(BaseHTTPMiddleware, dispatch=tenant_middleware)
+
 # Enable CORS for the React frontend
 app.add_middleware(
     CORSMiddleware,
