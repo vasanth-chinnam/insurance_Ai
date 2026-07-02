@@ -84,3 +84,27 @@ def home():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/db-status")
+def db_status():
+    from backend.db import USE_POSTGRES, DATABASE_URL
+    
+    status = {
+        "use_postgres": USE_POSTGRES,
+        "database_url_configured": bool(DATABASE_URL),
+        "database_url_preview": DATABASE_URL[:40] + "..." if DATABASE_URL else None,
+    }
+    
+    if USE_POSTGRES:
+        try:
+            from backend.db import _pg_connect
+            conn = _pg_connect()
+            conn.close()
+            status["connection_status"] = "Connected successfully to Supabase PostgreSQL!"
+        except Exception as e:
+            status["connection_status"] = f"Failed to connect: {str(e)}"
+    else:
+        status["connection_status"] = "Using local SQLite database fallback."
+        
+    return status
