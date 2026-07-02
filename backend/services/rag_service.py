@@ -120,18 +120,37 @@ def get_qdrant() -> QdrantClient | None:
     if _qdrant is not None:
         return _qdrant
 
+    # 1. Determine actual embedding size dynamically
+    try:
+        emb = get_embeddings()
+        test_vector = emb.embed_query("test")
+        embedding_size = len(test_vector)
+        logger.info("Determined embedding model dimension: %d", embedding_size)
+    except Exception as e:
+        logger.warning("Could not determine embedding dimension, falling back to 384: %s", e)
+        embedding_size = 384
+
+    # 2. Try remote Qdrant client
     try:
         client = QdrantClient(url=QDRANT_URL, timeout=5)
-        # Test connectivity
         existing = [c.name for c in client.get_collections().collections]
+        if QDRANT_COLLECTION in existing:
+            # Check size mismatch
+            coll_info = client.get_collection(QDRANT_COLLECTION)
+            current_size = coll_info.config.params.vectors.size
+            if current_size != embedding_size:
+                logger.warning("Qdrant collection size mismatch (%d vs %d). Recreating collection...", current_size, embedding_size)
+                client.delete_collection(QDRANT_COLLECTION)
+                existing.remove(QDRANT_COLLECTION)
+
         if QDRANT_COLLECTION not in existing:
             client.create_collection(
                 collection_name=QDRANT_COLLECTION,
-                vectors_config=VectorParams(size=384, distance=Distance.COSINE),
+                vectors_config=VectorParams(size=embedding_size, distance=Distance.COSINE),
             )
-            logger.info("Created Qdrant collection: %s", QDRANT_COLLECTION)
+            logger.info("Created Qdrant collection: %s (size=%d)", QDRANT_COLLECTION, embedding_size)
         else:
-            logger.info("Connected to existing Qdrant collection: %s", QDRANT_COLLECTION)
+            logger.info("Connected to existing Qdrant collection: %s (size=%d)", QDRANT_COLLECTION, embedding_size)
         _qdrant = client
         return _qdrant
     except Exception as e:
@@ -145,14 +164,23 @@ def get_qdrant() -> QdrantClient | None:
             os.makedirs(local_db_path, exist_ok=True)
             client = QdrantClient(path=local_db_path)
             existing = [c.name for c in client.get_collections().collections]
+
+            if QDRANT_COLLECTION in existing:
+                coll_info = client.get_collection(QDRANT_COLLECTION)
+                current_size = coll_info.config.params.vectors.size
+                if current_size != embedding_size:
+                    logger.warning("Local Qdrant collection size mismatch (%d vs %d). Recreating collection...", current_size, embedding_size)
+                    client.delete_collection(QDRANT_COLLECTION)
+                    existing.remove(QDRANT_COLLECTION)
+
             if QDRANT_COLLECTION not in existing:
                 client.create_collection(
                     collection_name=QDRANT_COLLECTION,
-                    vectors_config=VectorParams(size=384, distance=Distance.COSINE),
+                    vectors_config=VectorParams(size=embedding_size, distance=Distance.COSINE),
                 )
-                logger.info("Created local Qdrant collection: %s", QDRANT_COLLECTION)
+                logger.info("Created local Qdrant collection: %s (size=%d)", QDRANT_COLLECTION, embedding_size)
             else:
-                logger.info("Connected to local Qdrant collection: %s", QDRANT_COLLECTION)
+                logger.info("Connected to local Qdrant collection: %s (size=%d)", QDRANT_COLLECTION, embedding_size)
             _qdrant = client
             return _qdrant
         except Exception as local_e:
