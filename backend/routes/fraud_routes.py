@@ -1,7 +1,8 @@
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from backend.middleware.rbac import require_permission
 from backend.models.fraud_schemas import FraudRequest, FraudResponse
 from backend.services.fraud_detector import detect_fraud
 
@@ -10,7 +11,10 @@ router = APIRouter(prefix="/fraud", tags=["Fraud Detection"])
 
 
 @router.post("/analyze", response_model=FraudResponse)
-def analyze_fraud(request: FraudRequest):
+def analyze_fraud(
+    request: FraudRequest,
+    current_user: dict = Depends(require_permission("fraud:read")),
+):
     """Run fraud analysis on the given claim data."""
     logger.info(
         "Fraud analysis requested — type=%s amount=%.0f",

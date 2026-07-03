@@ -20,27 +20,35 @@ import RiskProfiler from './components/RiskProfiler'
 import CropInsurance from './components/CropInsurance'
 import RenewalCompare from './components/RenewalCompare'
 import AgentAutomation from './components/AgentAutomation'
+import Analytics from './components/Analytics'
+import AuditLogs from './components/AuditLogs'
+import AdminPanel from './components/AdminPanel'
+import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage from './LoginPage'
 import RegisterPage from './RegisterPage'
 import { useAuth } from './AuthContext'
+import { canAccess, getRoleLabel, getRoleBadgeColor } from './rbac'
 import './App.css'
 
 const API_BASE = '/api'
 
 const NAV_ITEMS = [
-  { id: 'policy_rag', icon: Stethoscope, label: 'Policy Q&A', badge: 'Live', phase: null },
-  { id: 'motor_claim', icon: FileText, label: 'Claim Estimator', badge: 'Live', phase: 2 },
+  { id: 'policy_qa', icon: Stethoscope, label: 'Policy Q&A', badge: 'Live', phase: null },
+  { id: 'claim_estimator', icon: FileText, label: 'Claim Estimator', badge: 'Live', phase: 2 },
   { id: 'fraud_detection', icon: Search, label: 'Fraud Detection', badge: 'Live', phase: 3 },
   { id: 'risk_profiler', icon: BarChart3, label: 'Risk Profiler', badge: 'Live', phase: 4 },
-  { id: 'crop_payout', icon: Leaf, label: 'Crop Insurance', badge: 'Live', phase: 5 },
-  { id: 'renewal_agent', icon: RefreshCcw, label: 'Renewal Compare', badge: 'Live', phase: 6 },
+  { id: 'crop_insurance', icon: Leaf, label: 'Crop Insurance', badge: 'Live', phase: 5 },
+  { id: 'renewal_compare', icon: RefreshCcw, label: 'Renewal Compare', badge: 'Live', phase: 6 },
   { id: 'agent_automation', icon: Sparkles, label: 'Agent Automation', badge: 'Live', phase: 7 },
+  { id: 'analytics', icon: BarChart3, label: 'Analytics', badge: 'New', phase: null },
+  { id: 'audit_logs', icon: FileText, label: 'Audit Logs', badge: 'Admin', phase: null },
+  { id: 'admin_panel', icon: ShieldCheck, label: 'Admin Panel', badge: 'Admin', phase: null },
 ]
 
 function App() {
   const { user, loading, logout } = useAuth()
   const [authMode, setAuthMode] = useState("login")
-  const [activeNav, setActiveNav] = useState('policy_rag')
+  const [activeNav, setActiveNav] = useState('policy_qa')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [toast, setToast] = useState(null)
   
@@ -77,7 +85,7 @@ function App() {
 
         <nav className="sidebar-nav">
           <div className="nav-label">Main Features</div>
-          {NAV_ITEMS.map(item => {
+          {NAV_ITEMS.filter(item => canAccess(user?.role || 'customer', item.id)).map(item => {
             const Icon = item.icon
             return (
               <div
@@ -108,6 +116,20 @@ function App() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>{user.name}</div>
               <div style={{ fontSize: 11, color: "#9CA3AF", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>{user.email}</div>
+              
+              {/* Role badge */}
+              <div style={{ marginTop: 4 }}>
+                <span style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: "2px 8px",
+                  borderRadius: 999,
+                  background: getRoleBadgeColor(user?.role || 'customer').bg,
+                  color: getRoleBadgeColor(user?.role || 'customer').color,
+                }}>
+                  {getRoleLabel(user?.role || 'customer')}
+                </span>
+              </div>
             </div>
             <button onClick={logout} title="Log out" style={{ background: "none", border: "none", color: "#EF4444", cursor: "pointer", padding: 4, fontSize: "1.1rem" }}>
               🚪
@@ -126,42 +148,74 @@ function App() {
           {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
 
-        {activeNav === 'policy_rag' && (
-          <PolicyChat 
-            messages={messages} 
-            setMessages={setMessages} 
-            API_BASE={API_BASE} 
-            showToast={showToast} 
-          />
+        {activeNav === 'policy_qa' && (
+          <ProtectedRoute role={user?.role} allowedRoles={['customer', 'agent', 'manager', 'admin']}>
+            <PolicyChat 
+              messages={messages} 
+              setMessages={setMessages} 
+              API_BASE={API_BASE} 
+              showToast={showToast} 
+            />
+          </ProtectedRoute>
         )}
 
-        {activeNav === 'motor_claim' && (
-          <MotorClaimsForm 
-            API_BASE={API_BASE} 
-            showToast={showToast} 
-          />
+        {activeNav === 'claim_estimator' && (
+          <ProtectedRoute role={user?.role} allowedRoles={['customer', 'agent', 'manager', 'admin']}>
+            <MotorClaimsForm 
+              API_BASE={API_BASE} 
+              showToast={showToast} 
+            />
+          </ProtectedRoute>
         )}
 
         {activeNav === 'fraud_detection' && (
-          <FraudDetection
-            showToast={showToast}
-          />
+          <ProtectedRoute role={user?.role} allowedRoles={['fraud_investigator', 'manager', 'admin']}>
+            <FraudDetection
+              showToast={showToast}
+            />
+          </ProtectedRoute>
         )}
 
         {activeNav === 'risk_profiler' && (
-          <RiskProfiler />
+          <ProtectedRoute role={user?.role} allowedRoles={['customer', 'agent', 'fraud_investigator', 'manager', 'admin']}>
+            <RiskProfiler />
+          </ProtectedRoute>
         )}
 
-        {activeNav === 'crop_payout' && (
-          <CropInsurance />
+        {activeNav === 'crop_insurance' && (
+          <ProtectedRoute role={user?.role} allowedRoles={['agent', 'manager', 'admin']}>
+            <CropInsurance />
+          </ProtectedRoute>
         )}
 
-        {activeNav === 'renewal_agent' && (
-          <RenewalCompare />
+        {activeNav === 'renewal_compare' && (
+          <ProtectedRoute role={user?.role} allowedRoles={['customer', 'agent', 'manager', 'admin']}>
+            <RenewalCompare />
+          </ProtectedRoute>
         )}
 
         {activeNav === 'agent_automation' && (
-          <AgentAutomation />
+          <ProtectedRoute role={user?.role} allowedRoles={['agent', 'fraud_investigator', 'manager', 'admin']}>
+            <AgentAutomation />
+          </ProtectedRoute>
+        )}
+
+        {activeNav === 'analytics' && (
+          <ProtectedRoute role={user?.role} allowedRoles={['manager', 'admin']}>
+            <Analytics />
+          </ProtectedRoute>
+        )}
+
+        {activeNav === 'audit_logs' && (
+          <ProtectedRoute role={user?.role} allowedRoles={['admin']}>
+            <AuditLogs />
+          </ProtectedRoute>
+        )}
+
+        {activeNav === 'admin_panel' && (
+          <ProtectedRoute role={user?.role} allowedRoles={['admin']}>
+            <AdminPanel showToast={showToast} />
+          </ProtectedRoute>
         )}
       </main>
 

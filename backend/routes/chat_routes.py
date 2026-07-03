@@ -2,20 +2,21 @@ import os
 import shutil
 import logging
 
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, Depends
 
 from backend.models.schemas import ChatRequest, ChatResponse, UploadResponse
 from backend.services.rag_service import ingest_file, query_rag
 from backend.services.chat_service import chat_service
 from backend.utils.router import route_query
 from backend.config import POLICIES_DIR
+from backend.middleware.rbac import require_permission
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest, current_user: dict = Depends(require_permission("chat:read"))):
     """Central chat endpoint – routes the query and responds."""
     query = request.query
     route = route_query(query)
@@ -70,7 +71,10 @@ async def chat(request: ChatRequest):
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def upload_document(file: UploadFile = File(...)):
+async def upload_document(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_permission("policy:upload")),
+):
     """Upload a PDF / TXT policy document for RAG ingestion."""
     os.makedirs(POLICIES_DIR, exist_ok=True)
 
@@ -106,13 +110,13 @@ async def upload_document(file: UploadFile = File(...)):
 
 
 @router.get("/history")
-async def get_history():
+async def get_history(current_user: dict = Depends(require_permission("chat:read"))):
     """Return full chat history."""
     return {"history": chat_service.get_history()}
 
 
 @router.delete("/history")
-async def clear_history():
+async def clear_history(current_user: dict = Depends(require_permission("chat:read"))):
     """Clear chat history."""
     chat_service.clear_history()
     return {"status": "cleared"}

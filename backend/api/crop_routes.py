@@ -2,7 +2,8 @@ import json
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from backend.middleware.rbac import require_permission
 from backend.models.crop_schemas import CropAnalyzeRequest, CropAgentResponse
 from backend.services.crop_agent import run_crop_agent
 
@@ -11,13 +12,16 @@ router = APIRouter(prefix="/crop", tags=["Crop Agent"])
 
 
 @router.post("/analyze", response_model=CropAgentResponse)
-def analyze_crop(request: CropAnalyzeRequest):
+def analyze_crop(
+    request: CropAnalyzeRequest,
+    current_user: dict = Depends(require_permission("crop:read")),
+):
     """Analyze crop conditions, check historical weather indices, and evaluate payout eligibility."""
     return run_crop_agent(request)
 
 
 @router.get("/farmers")
-def list_farmers():
+def list_farmers(current_user: dict = Depends(require_permission("crop:read"))):
     """Return list of demo farmers for the UI dropdown."""
     try:
         with open(Path("data/mock_db/farmers.json")) as f:

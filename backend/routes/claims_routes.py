@@ -2,8 +2,9 @@ import os
 import shutil
 import logging
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 
+from backend.middleware.rbac import require_permission
 from backend.services.claims_service import process_motor_claim
 from backend.models.claim_schemas import ClaimRequest, ClaimResponse
 from backend.config import CLAIMS_UPLOAD_DIR, MAX_IMAGE_SIZE_MB
@@ -29,6 +30,7 @@ async def submit_motor_claim(
     # ── File uploads ───────────────────────────────────────────────
     damage_photo: UploadFile  = File(..., description="Photo of the vehicle damage (JPG/PNG)"),
     claim_pdf: UploadFile     = File(None, description="(Optional) Policy/claim PDF to ingest into RAG"),
+    current_user: dict        = Depends(require_permission("claims:create")),
 ):
     """
     Submit a motor insurance claim for AI-powered damage assessment.

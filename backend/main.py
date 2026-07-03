@@ -14,6 +14,7 @@ from backend.api.crop_routes import router as crop_router
 from backend.api.renewal_routes import router as renewal_router
 from backend.api.automation_routes import router as automation_router
 from backend.api.health_travel_routes import router as health_travel_router
+from backend.api.admin_routes import router as admin_router
 from backend.services.rag_service import ingest_file
 from backend.config import POLICIES_DIR
 from backend.db import init_db
@@ -80,6 +81,7 @@ app.include_router(crop_router)
 app.include_router(renewal_router)
 app.include_router(automation_router)
 app.include_router(health_travel_router)
+app.include_router(admin_router)
 
 
 @app.get("/")
