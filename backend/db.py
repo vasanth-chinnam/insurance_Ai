@@ -226,6 +226,27 @@ class _PgCursorWrapper:
 
 # ── Schema initialisation ─────────────────────────────────────────────
 
+def seed_default_users(conn):
+    """Seed default users for all RBAC roles in the default tenant."""
+    pwd_hash = "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f"  # password123
+    default_users = [
+        ("U-ADMIN-999", "System Admin", "admin@insureai.com", "admin", pwd_hash),
+        ("U-MANAGER-999", "System Manager", "manager@insureai.com", "manager", pwd_hash),
+        ("U-AGENT-999", "System Agent", "agent@insureai.com", "agent", pwd_hash),
+        ("U-INVEST-999", "System Investigator", "investigator@insureai.com", "fraud_investigator", pwd_hash),
+        ("U-CUST-999", "System Customer", "customer@insureai.com", "customer", pwd_hash),
+    ]
+    cur = conn.cursor()
+    for uid, name, email, role, phash in default_users:
+        cur.execute("SELECT 1 FROM users WHERE user_id = ?", (uid,))
+        if not cur.fetchone():
+            cur.execute("SELECT 1 FROM users WHERE LOWER(email) = ?", (email.lower(),))
+            if not cur.fetchone():
+                conn.execute(
+                    "INSERT INTO users (user_id, name, email, phone, password_hash, role, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (uid, name, email, "", phash, role, DEFAULT_TENANT_ID)
+                )
+
 def init_db():
     """Create all tables if they don't exist. Call this on startup."""
     if USE_POSTGRES:
@@ -377,6 +398,8 @@ def _init_sqlite():
         for table in ["users", "policies", "claims", "fraud_checks", "risk_profiles", "renewal_history"]:
             c.execute(f"UPDATE {table} SET tenant_id = ? WHERE tenant_id IS NULL", (DEFAULT_TENANT_ID,))
 
+        seed_default_users(conn)
+
         logger.info("SQLite database initialized at %s with multi-tenant support", DB_PATH)
 
 
@@ -527,6 +550,8 @@ def _init_pg():
         # Backfill: set default tenant on any rows missing tenant_id
         for table in ["users", "policies", "claims", "fraud_checks", "risk_profiles", "renewal_history"]:
             cur.execute(f"UPDATE {table} SET tenant_id = %s WHERE tenant_id IS NULL", (DEFAULT_TENANT_ID,))
+
+        seed_default_users(conn)
 
         conn.commit()
         logger.info("PostgreSQL database initialized with multi-tenant support (Supabase)")

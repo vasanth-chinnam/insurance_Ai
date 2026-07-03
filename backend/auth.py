@@ -84,23 +84,6 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         if not row:
             raise HTTPException(status_code=401, detail="User not found")
 
-    # Dynamically update the database user role if using a mock token and roles differ
-    if row and token and token.startswith("mock-"):
-        token_role = payload.get("role", "customer")
-        if token_role == "user":
-            token_role = "admin"
-        if row["role"] != token_role:
-            with get_conn() as conn:
-                conn.execute(
-                    "UPDATE users SET role = ? WHERE user_id = ? AND tenant_id = ?",
-                    (token_role, user_id, tenant_id)
-                )
-            # Re-query
-            with get_conn() as conn:
-                c = conn.cursor()
-                c.execute("SELECT user_id, name, email, role, tenant_id FROM users WHERE user_id = ?", (user_id,))
-                row = c.fetchone()
-
     user = dict(row)
     user["tenant_id"] = tenant_id
     return user

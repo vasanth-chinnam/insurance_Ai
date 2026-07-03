@@ -27,22 +27,8 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
-  const updateRole = (newRole) => {
-    if (user) {
-      const updatedUser = { ...user, role: newRole }
-      localStorage.setItem("insureai_user", JSON.stringify(updatedUser))
-      const token = localStorage.getItem("insureai_token")
-      if (token && token.startsWith("mock-")) {
-        const parts = token.split("-")
-        const userId = parts[parts.length - 1]
-        localStorage.setItem("insureai_token", `mock-google-token-${newRole}-${userId}`)
-      }
-      setUser(updatedUser)
-    }
-  }
-
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, updateRole }}>
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   )
