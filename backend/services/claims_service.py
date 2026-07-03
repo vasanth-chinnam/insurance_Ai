@@ -57,8 +57,8 @@ def _get_vision_llm() -> ChatGoogleGenerativeAI | None:
         model=VISION_MODEL,
         google_api_key=GOOGLE_API_KEY,
         temperature=0,
-        max_retries=1,
-        timeout=4,
+        max_retries=0,
+        timeout=10,
     )
     logger.info("Vision LLM (%s) initialized", VISION_MODEL)
     return _vision_llm

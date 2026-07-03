@@ -220,8 +220,8 @@ def _build_llm_chain() -> list:
                     model=CHAT_MODEL_GEMINI,
                     temperature=0,
                     google_api_key=GOOGLE_API_KEY,
-                    max_retries=1,
-                    timeout=4,
+                    max_retries=0,
+                    timeout=10,
                 )
             })
             logger.info("Gemini added to LLM chain")
@@ -236,8 +236,8 @@ def _build_llm_chain() -> list:
                 "llm": ChatOpenAI(
                     model=CHAT_MODEL_OPENAI,
                     temperature=0,
-                    max_retries=1,
-                    request_timeout=4,
+                    max_retries=0,
+                    timeout=10,
                 )
             })
             logger.info("OpenAI added to LLM chain")
