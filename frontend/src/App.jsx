@@ -46,7 +46,7 @@ const NAV_ITEMS = [
 ]
 
 function App() {
-  const { user, loading, logout } = useAuth()
+  const { user, loading, logout, updateRole } = useAuth()
   const [authMode, setAuthMode] = useState("login")
   const [activeNav, setActiveNav] = useState('policy_qa')
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -117,8 +117,8 @@ function App() {
               <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>{user.name}</div>
               <div style={{ fontSize: 11, color: "#9CA3AF", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>{user.email}</div>
               
-              {/* Role badge */}
-              <div style={{ marginTop: 4 }}>
+              {/* Role badge and switcher */}
+              <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
                 <span style={{
                   fontSize: 10,
                   fontWeight: 700,
@@ -126,9 +126,36 @@ function App() {
                   borderRadius: 999,
                   background: getRoleBadgeColor(user?.role || 'customer').bg,
                   color: getRoleBadgeColor(user?.role || 'customer').color,
+                  display: "inline-block",
+                  alignSelf: "flex-start"
                 }}>
                   {getRoleLabel(user?.role || 'customer')}
                 </span>
+                <select
+                  value={user?.role || "customer"}
+                  onChange={e => {
+                    updateRole(e.target.value)
+                    showToast(`Switched workspace role to: ${getRoleLabel(e.target.value)}`, "success")
+                  }}
+                  style={{
+                    background: "#1E293B",
+                    color: "#9CA3AF",
+                    border: "1px solid #475569",
+                    borderRadius: 4,
+                    fontSize: 10,
+                    padding: "2px 4px",
+                    cursor: "pointer",
+                    outline: "none",
+                    marginTop: 2,
+                    width: "100%"
+                  }}
+                >
+                  <option value="customer">Customer</option>
+                  <option value="agent">Agent</option>
+                  <option value="fraud_investigator">Fraud Investigator</option>
+                  <option value="manager">Manager</option>
+                  <option value="admin">Admin</option>
+                </select>
               </div>
             </div>
             <button onClick={logout} title="Log out" style={{ background: "none", border: "none", color: "#EF4444", cursor: "pointer", padding: 4, fontSize: "1.1rem" }}>

@@ -25,7 +25,7 @@ async def run_production_verification():
           localStorage.setItem("insureai_user", JSON.stringify({
             name: "Vasanth Chinnam",
             email: "vasanth@example.com",
-            role: "user",
+            role: "admin",
             avatar: ""
           }));
           window.location.reload();
