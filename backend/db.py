@@ -394,8 +394,29 @@ def _init_sqlite():
         except sqlite3.OperationalError:
             pass
 
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS role_requests (
+                request_id     TEXT PRIMARY KEY,
+                user_id        TEXT NOT NULL,
+                requested_role TEXT NOT NULL,
+                company_name   TEXT,
+                employee_id    TEXT,
+                license_number TEXT,
+                additional_info TEXT,
+                status         TEXT DEFAULT 'pending',
+                tenant_id      TEXT,
+                created_at     TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id),
+                FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+            )
+        """)
+        try:
+            c.execute("ALTER TABLE role_requests ADD COLUMN tenant_id TEXT")
+        except sqlite3.OperationalError:
+            pass
+
         # Backfill default tenant for SQLite
-        for table in ["users", "policies", "claims", "fraud_checks", "risk_profiles", "renewal_history"]:
+        for table in ["users", "policies", "claims", "fraud_checks", "risk_profiles", "renewal_history", "role_requests"]:
             c.execute(f"UPDATE {table} SET tenant_id = ? WHERE tenant_id IS NULL", (DEFAULT_TENANT_ID,))
 
         seed_default_users(conn)
@@ -547,8 +568,29 @@ def _init_pg():
             END $$;
         """)
 
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS role_requests (
+                request_id     TEXT PRIMARY KEY,
+                user_id        TEXT NOT NULL REFERENCES users(user_id),
+                requested_role TEXT NOT NULL,
+                company_name   TEXT,
+                employee_id    TEXT,
+                license_number TEXT,
+                additional_info TEXT,
+                status         TEXT DEFAULT 'pending',
+                tenant_id      UUID REFERENCES tenants(id),
+                created_at     TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE role_requests ADD COLUMN tenant_id UUID REFERENCES tenants(id);
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$;
+        """)
+
         # Backfill: set default tenant on any rows missing tenant_id
-        for table in ["users", "policies", "claims", "fraud_checks", "risk_profiles", "renewal_history"]:
+        for table in ["users", "policies", "claims", "fraud_checks", "risk_profiles", "renewal_history", "role_requests"]:
             cur.execute(f"UPDATE {table} SET tenant_id = %s WHERE tenant_id IS NULL", (DEFAULT_TENANT_ID,))
 
         seed_default_users(conn)

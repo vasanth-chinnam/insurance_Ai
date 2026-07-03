@@ -75,3 +75,78 @@ def get_my_tenant(current_user: dict = Depends(get_current_user)):
     if not row:
         raise HTTPException(status_code=404, detail="Tenant not found")
     return dict(row)
+
+
+class RoleRequestAction(BaseModel):
+    action: str  # "approve" | "reject"
+
+
+@router.get("/role-requests")
+def list_role_requests(current_user: dict = Depends(require_admin_or_manager)):
+    """List all role requests in the current tenant."""
+    tenant_id = current_user.get("tenant_id", DEFAULT_TENANT_ID)
+    with get_conn() as conn:
+        rows = conn.execute("""
+            SELECT r.request_id, r.user_id, r.requested_role, r.company_name, 
+                   r.employee_id, r.license_number, r.additional_info, r.status, 
+                   r.created_at, u.name as user_name, u.email as user_email
+            FROM role_requests r
+            JOIN users u ON r.user_id = u.user_id
+            WHERE r.tenant_id = ?
+            ORDER BY r.created_at DESC
+        """, (tenant_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/role-requests/{request_id}/action")
+def handle_role_request(
+    request_id: str,
+    body: RoleRequestAction,
+    current_user: dict = Depends(require_admin),
+):
+    """Admin only — approve or reject a role request."""
+    action = body.action.strip().lower()
+    if action not in ["approve", "reject"]:
+        raise HTTPException(status_code=400, detail="Invalid action. Must be 'approve' or 'reject'")
+        
+    tenant_id = current_user.get("tenant_id", DEFAULT_TENANT_ID)
+    
+    with get_conn() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT user_id, requested_role, status 
+            FROM role_requests 
+            WHERE request_id = ? AND tenant_id = ?
+        """, (request_id, tenant_id))
+        row = c.fetchone()
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="Role request not found")
+            
+        if row["status"] != "pending":
+            raise HTTPException(status_code=400, detail=f"Request already processed (status: {row['status']})")
+            
+        target_user_id = row["user_id"]
+        requested_role = row["requested_role"]
+        
+        new_status = "approved" if action == "approve" else "rejected"
+        
+        c.execute("""
+            UPDATE role_requests 
+            SET status = ? 
+            WHERE request_id = ? AND tenant_id = ?
+        """, (new_status, request_id, tenant_id))
+        
+        if action == "approve":
+            c.execute("""
+                UPDATE users 
+                SET role = ? 
+                WHERE user_id = ? AND tenant_id = ?
+            """, (requested_role, target_user_id, tenant_id))
+            logger.info("Approved role request %s: User %s promoted to %s by Admin %s",
+                        request_id, target_user_id, requested_role, current_user["user_id"])
+        else:
+            logger.info("Rejected role request %s: User %s rejected for role %s by Admin %s",
+                        request_id, target_user_id, requested_role, current_user["user_id"])
+                        
+    return {"message": f"Role request has been {new_status}"}

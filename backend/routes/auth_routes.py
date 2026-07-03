@@ -6,7 +6,7 @@ import hashlib
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 from backend.db import get_conn, DEFAULT_TENANT_ID
-from backend.auth import create_token
+from backend.auth import create_token, get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -23,6 +23,11 @@ class RegisterRequest(BaseModel):
     email: str
     phone: str | None = None
     password: str
+    requested_role: str = "customer"
+    company_name: str | None = None
+    employee_id: str | None = None
+    license_number: str | None = None
+    additional_info: str | None = None
 
 def hash_password(password: str) -> str:
     """Hash password using SHA-256 for simple offline run."""
@@ -140,6 +145,23 @@ def register(req_body: RegisterRequest, req: Request):
             "INSERT INTO users (user_id, name, email, phone, password_hash, role, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (user_id, name, email, phone, password_hash, role, tenant_id),
         )
+        
+        # If they requested a privileged role, insert a pending request record
+        if req_body.requested_role and req_body.requested_role != "customer":
+            req_id = "REQ" + str(uuid.uuid4().hex[:8]).upper()
+            c.execute("""
+                INSERT INTO role_requests (
+                    request_id, user_id, requested_role, company_name, 
+                    employee_id, license_number, additional_info, status, tenant_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                req_id, user_id, req_body.requested_role,
+                req_body.company_name or "", req_body.employee_id or "",
+                req_body.license_number or "", req_body.additional_info or "",
+                "pending", tenant_id
+            ))
+            logger.info("Created pending role request %s for user %s to role %s", req_id, user_id, req_body.requested_role)
+
         logger.info("Registered new user: %s (%s)", name, email)
 
     token = create_token(user_id, email, role, tenant_id)
@@ -150,5 +172,34 @@ def register(req_body: RegisterRequest, req: Request):
         "role": role,
         "avatar": "",
         "tenant_id": tenant_id,
+    }
+
+@router.get("/me")
+def get_me(current_user: dict = Depends(get_current_user)):
+    with get_conn() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT request_id, requested_role, status 
+            FROM role_requests 
+            WHERE user_id = ? 
+            ORDER BY created_at DESC LIMIT 1
+        """, (current_user["user_id"],))
+        req_row = c.fetchone()
+        
+    pending_request = None
+    if req_row and req_row["status"] == "pending":
+        pending_request = {
+            "request_id": req_row["request_id"],
+            "requested_role": req_row["requested_role"],
+            "status": req_row["status"]
+        }
+        
+    return {
+        "user_id": current_user["user_id"],
+        "name": current_user["name"],
+        "email": current_user["email"],
+        "role": current_user["role"],
+        "tenant_id": current_user["tenant_id"],
+        "pending_role_request": pending_request
     }
 

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { apiFetch } from './utils/api'
 import { 
   FileText, 
   Search, 
@@ -51,9 +52,36 @@ function App() {
   const [activeNav, setActiveNav] = useState('policy_qa')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [toast, setToast] = useState(null)
+  const [pendingRequest, setPendingRequest] = useState(null)
   
   // Lift chat messages state so history persists between tab switches
   const [messages, setMessages] = useState([])
+
+  useEffect(() => {
+    if (user) {
+      const fetchProfile = async () => {
+        try {
+          const res = await apiFetch("/auth/me")
+          if (res.ok) {
+            const data = await res.json()
+            if (data.role !== user.role) {
+              const updatedUser = { ...user, role: data.role }
+              localStorage.setItem("insureai_user", JSON.stringify(updatedUser))
+              window.location.reload()
+            }
+            if (data.pending_role_request) {
+              setPendingRequest(data.pending_role_request)
+            } else {
+              setPendingRequest(null)
+            }
+          }
+        } catch (err) {
+          console.error("Failed to fetch user profile:", err)
+        }
+      }
+      fetchProfile()
+    }
+  }, [user])
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type })
@@ -149,6 +177,30 @@ function App() {
         <button className="btn-icon btn-menu mobile-menu-btn" onClick={() => setSidebarOpen(s => !s)} style={{ position: 'absolute', top: '15px', left: '15px', zIndex: 10 }}>
           {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
+
+        {pendingRequest && (
+          <div style={{
+            background: "#EFF6FF",
+            border: "1px solid #BFDBFE",
+            borderRadius: 12,
+            padding: "16px 20px",
+            margin: "20px 40px 0 40px",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            boxShadow: "0 2px 4px rgba(0,0,0,0.02)"
+          }}>
+            <span style={{ fontSize: 20 }}>⏳</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#1E40AF" }}>
+                Role Verification Request Pending
+              </div>
+              <div style={{ fontSize: 13, color: "#1E3A8A", marginTop: 2 }}>
+                Your request to become a <strong>{getRoleLabel(pendingRequest.requested_role)}</strong> is currently under review by an administrator. You are currently viewing the platform with <strong>{getRoleLabel(user?.role)}</strong> privileges.
+              </div>
+            </div>
+          </div>
+        )}
 
         {activeNav === 'policy_qa' && (
           <ProtectedRoute role={user?.role} allowedRoles={['customer', 'agent', 'manager', 'admin']}>

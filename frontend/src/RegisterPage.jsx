@@ -4,7 +4,8 @@ import { useAuth } from "./AuthContext"
 export default function RegisterPage({ onSwitch }) {
   const { login }           = useAuth()
   const [form, setForm]     = useState({
-    name: "", email: "", phone: "", password: "", confirm: ""
+    name: "", email: "", phone: "", password: "", confirm: "",
+    requested_role: "customer", company_name: "", employee_id: "", license_number: "", additional_info: ""
   })
   const [showPass, setShow] = useState(false)
   const [error, setError]   = useState(null)
@@ -93,6 +94,23 @@ export default function RegisterPage({ onSwitch }) {
       setError("Password must be at least 8 characters")
       return
     }
+    
+    // Role-specific verification field checks
+    if (form.requested_role !== "customer") {
+      if (form.requested_role === "agent" && (!form.company_name || !form.license_number)) {
+        setError("Please enter your Agency Name and Agent License Number")
+        return
+      }
+      if (form.requested_role === "fraud_investigator" && (!form.company_name || !form.license_number)) {
+        setError("Please enter your Company Name and Investigator License Number")
+        return
+      }
+      if ((form.requested_role === "manager" || form.requested_role === "admin") && (!form.company_name || !form.employee_id)) {
+        setError("Please enter your Company Name and Employee ID")
+        return
+      }
+    }
+
     setLoad(true)
     setError(null)
     try {
@@ -107,6 +125,11 @@ export default function RegisterPage({ onSwitch }) {
         body: JSON.stringify({
           name: form.name, email: form.email,
           phone: form.phone, password: form.password,
+          requested_role: form.requested_role,
+          company_name: form.company_name,
+          employee_id: form.employee_id,
+          license_number: form.license_number,
+          additional_info: form.additional_info,
         }),
       })
       if (!res.ok) throw new Error((await res.json()).detail || "Registration failed")
@@ -206,6 +229,57 @@ export default function RegisterPage({ onSwitch }) {
         </div>
 
         {inp("confirm", "Confirm Password *", "password")}
+
+        {/* Desired Role Selector */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 13, fontWeight: 500, display: "block", marginBottom: 6 }}>
+            Desired Role
+          </label>
+          <select
+            value={form.requested_role}
+            onChange={e => setForm({ ...form, requested_role: e.target.value })}
+            style={{ ...inputStyle, background: "#fff", cursor: "pointer" }}
+          >
+            <option value="customer">Customer (No Verification Needed)</option>
+            <option value="agent">Agent</option>
+            <option value="fraud_investigator">Fraud Investigator</option>
+            <option value="manager">Manager</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+
+        {/* Dynamic Verification Fields */}
+        {form.requested_role === "agent" && (
+          <div style={{ border: "1px solid #E5E7EB", borderRadius: 8, padding: 12, marginBottom: 14, background: "#F9FAFB" }}>
+            <div style={{ fontSize: 12, color: "#4F46E5", fontWeight: 600, marginBottom: 10 }}>Agent Credentials Verification</div>
+            {inp("company_name", "Agency/Company Name *")}
+            {inp("license_number", "Agent License Number *")}
+          </div>
+        )}
+
+        {form.requested_role === "fraud_investigator" && (
+          <div style={{ border: "1px solid #E5E7EB", borderRadius: 8, padding: 12, marginBottom: 14, background: "#F9FAFB" }}>
+            <div style={{ fontSize: 12, color: "#4F46E5", fontWeight: 600, marginBottom: 10 }}>Investigator Verification</div>
+            {inp("company_name", "Investigator Agency/Company Name *")}
+            {inp("license_number", "Investigator License Number *")}
+          </div>
+        )}
+
+        {form.requested_role === "manager" && (
+          <div style={{ border: "1px solid #E5E7EB", borderRadius: 8, padding: 12, marginBottom: 14, background: "#F9FAFB" }}>
+            <div style={{ fontSize: 12, color: "#4F46E5", fontWeight: 600, marginBottom: 10 }}>Manager Verification</div>
+            {inp("company_name", "Company Name *")}
+            {inp("employee_id", "Employee ID *")}
+          </div>
+        )}
+
+        {form.requested_role === "admin" && (
+          <div style={{ border: "1px solid #E5E7EB", borderRadius: 8, padding: 12, marginBottom: 14, background: "#F9FAFB" }}>
+            <div style={{ fontSize: 12, color: "#4F46E5", fontWeight: 600, marginBottom: 10 }}>Admin Verification</div>
+            {inp("company_name", "Company Name *")}
+            {inp("employee_id", "Employee ID *")}
+          </div>
+        )}
 
         {error && (
           <div style={{ color: "#DC2626", fontSize: 13,
