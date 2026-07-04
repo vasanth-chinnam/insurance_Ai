@@ -203,3 +203,50 @@ def get_me(current_user: dict = Depends(get_current_user)):
         "pending_role_request": pending_request
     }
 
+
+class RoleUpgradeRequest(BaseModel):
+    requested_role: str
+    company_name: str | None = None
+    employee_id: str | None = None
+    license_number: str | None = None
+    additional_info: str | None = None
+
+
+@router.post("/role-request")
+def create_role_request(
+    req_body: RoleUpgradeRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Allow any authenticated user (e.g. customer) to request a role upgrade."""
+    user_id = current_user["user_id"]
+    tenant_id = current_user.get("tenant_id", DEFAULT_TENANT_ID)
+    
+    if req_body.requested_role not in ["agent", "fraud_investigator", "manager", "admin"]:
+        raise HTTPException(status_code=400, detail="Invalid requested role")
+        
+    with get_conn() as conn:
+        c = conn.cursor()
+        
+        # Check if they already have a pending request
+        c.execute("""
+            SELECT 1 FROM role_requests 
+            WHERE user_id = ? AND status = 'pending' AND tenant_id = ?
+        """, (user_id, tenant_id))
+        if c.fetchone():
+            raise HTTPException(status_code=400, detail="You already have a pending role request under review")
+            
+        req_id = "REQ" + str(uuid.uuid4().hex[:8]).upper()
+        c.execute("""
+            INSERT INTO role_requests (
+                request_id, user_id, requested_role, company_name, 
+                employee_id, license_number, additional_info, status, tenant_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            req_id, user_id, req_body.requested_role,
+            req_body.company_name or "", req_body.employee_id or "",
+            req_body.license_number or "", req_body.additional_info or "",
+            "pending", tenant_id
+        ))
+        
+    return {"message": "Role upgrade request submitted successfully"}
+

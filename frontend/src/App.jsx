@@ -57,6 +57,54 @@ function App() {
   // Lift chat messages state so history persists between tab switches
   const [messages, setMessages] = useState([])
 
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [upgradeForm, setUpgradeForm] = useState({
+    requested_role: "agent",
+    company_name: "",
+    employee_id: "",
+    license_number: "",
+  })
+  const [upgradeError, setUpgradeError] = useState(null)
+  const [upgradeLoading, setUpgradeLoading] = useState(false)
+
+  const handleUpgradeSubmit = async () => {
+    setUpgradeError(null)
+    if (upgradeForm.requested_role === "agent" && (!upgradeForm.company_name || !upgradeForm.license_number)) {
+      setUpgradeError("Please enter your Agency Name and Agent License Number")
+      return
+    }
+    if (upgradeForm.requested_role === "fraud_investigator" && (!upgradeForm.company_name || !upgradeForm.license_number)) {
+      setUpgradeError("Please enter your Company Name and Investigator License Number")
+      return
+    }
+    if ((upgradeForm.requested_role === "manager" || upgradeForm.requested_role === "admin") && (!upgradeForm.company_name || !upgradeForm.employee_id)) {
+      setUpgradeError("Please enter your Company Name and Employee ID")
+      return
+    }
+
+    setUpgradeLoading(true)
+    try {
+      const res = await apiFetch("/auth/role-request", {
+        method: "POST",
+        body: JSON.stringify(upgradeForm),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.detail || "Submission failed")
+      }
+      showToast("Role upgrade request submitted successfully!", "success")
+      setPendingRequest({
+        requested_role: upgradeForm.requested_role,
+        status: "pending"
+      })
+      setShowUpgradeModal(false)
+    } catch (err) {
+      setUpgradeError(err.message)
+    } finally {
+      setUpgradeLoading(false)
+    }
+  }
+
   useEffect(() => {
     if (user) {
       const fetchProfile = async () => {
@@ -160,6 +208,26 @@ function App() {
                   {getRoleLabel(user?.role || 'customer')}
                 </span>
               </div>
+              {user?.role === "customer" && !pendingRequest && (
+                <div style={{ marginTop: 6 }}>
+                  <span 
+                    onClick={() => setShowUpgradeModal(true)}
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      padding: "2px 8px",
+                      borderRadius: 999,
+                      background: "#2563EB",
+                      color: "#fff",
+                      cursor: "pointer",
+                      display: "inline-block",
+                      boxShadow: "0 1px 3px rgba(0,0,0,0.2)"
+                    }}
+                  >
+                    Upgrade Role 🚀
+                  </span>
+                </div>
+              )}
             </div>
             <button onClick={logout} title="Log out" style={{ background: "none", border: "none", color: "#EF4444", cursor: "pointer", padding: 4, fontSize: "1.1rem" }}>
               🚪
@@ -287,6 +355,180 @@ function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── Upgrade Role Modal ───────────────────────────────── */}
+      {showUpgradeModal && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "rgba(0,0,0,0.5)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 9999
+        }}>
+          <div style={{
+            background: "#fff",
+            borderRadius: 16,
+            padding: "28px 24px",
+            width: 420,
+            boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)",
+            fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+          }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "#1E293B" }}>Request Role Upgrade</h3>
+            <p style={{ fontSize: 13, color: "#64748B", marginTop: 4, marginBottom: 20 }}>
+              Request a security role upgrade. This will be sent to the System Administrator for verification.
+            </p>
+
+            {/* Role Select */}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 13, fontWeight: 500, display: "block", marginBottom: 6, color: "#334155" }}>
+                Desired Role
+              </label>
+              <select
+                value={upgradeForm.requested_role}
+                onChange={e => setUpgradeForm({ ...upgradeForm, requested_role: e.target.value })}
+                style={{
+                  width: "100%", padding: "10px 14px",
+                  borderRadius: 8, border: "1px solid #CBD5E1",
+                  fontSize: 14, background: "#fff", outline: "none"
+                }}
+              >
+                <option value="agent">Agent</option>
+                <option value="fraud_investigator">Fraud Investigator</option>
+                <option value="manager">Manager</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+
+            {/* Dynamic Inputs */}
+            {upgradeForm.requested_role === "agent" && (
+              <>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 13, fontWeight: 500, display: "block", marginBottom: 6, color: "#475569" }}>Agency/Company Name *</label>
+                  <input
+                    type="text"
+                    value={upgradeForm.company_name}
+                    onChange={e => setUpgradeForm({ ...upgradeForm, company_name: e.target.value })}
+                    style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 14, boxSizing: "border-box" }}
+                  />
+                </div>
+                <div style={{ marginBottom: 20 }}>
+                  <label style={{ fontSize: 13, fontWeight: 500, display: "block", marginBottom: 6, color: "#475569" }}>Agent License Number *</label>
+                  <input
+                    type="text"
+                    value={upgradeForm.license_number}
+                    onChange={e => setUpgradeForm({ ...upgradeForm, license_number: e.target.value })}
+                    style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 14, boxSizing: "border-box" }}
+                  />
+                </div>
+              </>
+            )}
+
+            {upgradeForm.requested_role === "fraud_investigator" && (
+              <>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 13, fontWeight: 500, display: "block", marginBottom: 6, color: "#475569" }}>Investigator Agency/Company *</label>
+                  <input
+                    type="text"
+                    value={upgradeForm.company_name}
+                    onChange={e => setUpgradeForm({ ...upgradeForm, company_name: e.target.value })}
+                    style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 14, boxSizing: "border-box" }}
+                  />
+                </div>
+                <div style={{ marginBottom: 20 }}>
+                  <label style={{ fontSize: 13, fontWeight: 500, display: "block", marginBottom: 6, color: "#475569" }}>Investigator License Number *</label>
+                  <input
+                    type="text"
+                    value={upgradeForm.license_number}
+                    onChange={e => setUpgradeForm({ ...upgradeForm, license_number: e.target.value })}
+                    style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 14, boxSizing: "border-box" }}
+                  />
+                </div>
+              </>
+            )}
+
+            {upgradeForm.requested_role === "manager" && (
+              <>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 13, fontWeight: 500, display: "block", marginBottom: 6, color: "#475569" }}>Company Name *</label>
+                  <input
+                    type="text"
+                    value={upgradeForm.company_name}
+                    onChange={e => setUpgradeForm({ ...upgradeForm, company_name: e.target.value })}
+                    style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 14, boxSizing: "border-box" }}
+                  />
+                </div>
+                <div style={{ marginBottom: 20 }}>
+                  <label style={{ fontSize: 13, fontWeight: 500, display: "block", marginBottom: 6, color: "#475569" }}>Employee ID *</label>
+                  <input
+                    type="text"
+                    value={upgradeForm.employee_id}
+                    onChange={e => setUpgradeForm({ ...upgradeForm, employee_id: e.target.value })}
+                    style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 14, boxSizing: "border-box" }}
+                  />
+                </div>
+              </>
+            )}
+
+            {upgradeForm.requested_role === "admin" && (
+              <>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 13, fontWeight: 500, display: "block", marginBottom: 6, color: "#475569" }}>Company Name *</label>
+                  <input
+                    type="text"
+                    value={upgradeForm.company_name}
+                    onChange={e => setUpgradeForm({ ...upgradeForm, company_name: e.target.value })}
+                    style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 14, boxSizing: "border-box" }}
+                  />
+                </div>
+                <div style={{ marginBottom: 20 }}>
+                  <label style={{ fontSize: 13, fontWeight: 500, display: "block", marginBottom: 6, color: "#475569" }}>Employee ID *</label>
+                  <input
+                    type="text"
+                    value={upgradeForm.employee_id}
+                    onChange={e => setUpgradeForm({ ...upgradeForm, employee_id: e.target.value })}
+                    style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 14, boxSizing: "border-box" }}
+                  />
+                </div>
+              </>
+            )}
+
+            {upgradeError && (
+              <div style={{ padding: 10, background: "#FEE2E2", color: "#DC2626", borderRadius: 8, fontSize: 13, marginBottom: 14 }}>
+                {upgradeError}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setShowUpgradeModal(false)}
+                disabled={upgradeLoading}
+                style={{
+                  padding: "9px 16px", borderRadius: 8, border: "1px solid #CBD5E1",
+                  background: "#fff", color: "#475569", fontSize: 14, fontWeight: 500, cursor: "pointer", outline: "none"
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpgradeSubmit}
+                disabled={upgradeLoading}
+                style={{
+                  padding: "9px 16px", borderRadius: 8, border: "none",
+                  background: "#2563EB", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", outline: "none"
+                }}
+              >
+                {upgradeLoading ? "Submitting..." : "Submit Request"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
