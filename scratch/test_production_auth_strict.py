@@ -10,6 +10,7 @@ def test_production_auth_strict():
     init_db()
     
     default_users = [
+        ("U-VASANTH-ADMIN", "admin"),
         ("U-ADMIN-999", "admin"),
         ("U-MANAGER-999", "manager"),
         ("U-AGENT-999", "agent"),

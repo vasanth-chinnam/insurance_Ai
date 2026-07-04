@@ -230,6 +230,7 @@ def seed_default_users(conn):
     """Seed default users for all RBAC roles in the default tenant."""
     pwd_hash = "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f"  # password123
     default_users = [
+        ("U-VASANTH-ADMIN", "Vasanth Chinnam", "vasanthchinnam0@gmail.com", "admin", pwd_hash),
         ("U-ADMIN-999", "System Admin", "admin@insureai.com", "admin", pwd_hash),
         ("U-MANAGER-999", "System Manager", "manager@insureai.com", "manager", pwd_hash),
         ("U-AGENT-999", "System Agent", "agent@insureai.com", "agent", pwd_hash),
@@ -238,14 +239,18 @@ def seed_default_users(conn):
     ]
     cur = conn.cursor()
     for uid, name, email, role, phash in default_users:
-        cur.execute("SELECT 1 FROM users WHERE user_id = ?", (uid,))
+        cur.execute("SELECT 1 FROM users WHERE LOWER(email) = ?", (email.lower(),))
         if not cur.fetchone():
-            cur.execute("SELECT 1 FROM users WHERE LOWER(email) = ?", (email.lower(),))
-            if not cur.fetchone():
-                conn.execute(
-                    "INSERT INTO users (user_id, name, email, phone, password_hash, role, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (uid, name, email, "", phash, role, DEFAULT_TENANT_ID)
-                )
+            conn.execute(
+                "INSERT INTO users (user_id, name, email, phone, password_hash, role, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (uid, name, email, "", phash, role, DEFAULT_TENANT_ID)
+            )
+        else:
+            # Force update role to ensure correct privileges (e.g. if registered as customer previously)
+            conn.execute(
+                "UPDATE users SET role = ? WHERE LOWER(email) = ?",
+                (role, email.lower())
+            )
 
 def init_db():
     """Create all tables if they don't exist. Call this on startup."""
