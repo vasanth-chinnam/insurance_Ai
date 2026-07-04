@@ -593,7 +593,7 @@ def _init_pg():
         for table in ["users", "policies", "claims", "fraud_checks", "risk_profiles", "renewal_history", "role_requests"]:
             cur.execute(f"UPDATE {table} SET tenant_id = %s WHERE tenant_id IS NULL", (DEFAULT_TENANT_ID,))
 
-        seed_default_users(conn)
+        seed_default_users(_PgConnWrapper(conn))
 
         conn.commit()
         logger.info("PostgreSQL database initialized with multi-tenant support (Supabase)")
