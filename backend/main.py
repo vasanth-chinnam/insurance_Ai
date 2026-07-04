@@ -82,6 +82,8 @@ app.include_router(renewal_router)
 app.include_router(automation_router)
 app.include_router(health_travel_router)
 app.include_router(admin_router)
+from backend.api.audit_routes import router as audit_router
+app.include_router(audit_router)
 
 
 @app.get("/")

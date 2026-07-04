@@ -420,8 +420,29 @@ def _init_sqlite():
         except sqlite3.OperationalError:
             pass
 
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id          TEXT PRIMARY KEY,
+                user_id     TEXT,
+                tenant_id   TEXT,
+                action      TEXT NOT NULL,
+                entity      TEXT,
+                entity_id   TEXT,
+                details     TEXT,
+                ip_address  TEXT,
+                user_agent  TEXT,
+                status      TEXT DEFAULT 'success',
+                created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+            )
+        """)
+        try:
+            c.execute("ALTER TABLE audit_logs ADD COLUMN tenant_id TEXT")
+        except sqlite3.OperationalError:
+            pass
+
         # Backfill default tenant for SQLite
-        for table in ["users", "policies", "claims", "fraud_checks", "risk_profiles", "renewal_history", "role_requests"]:
+        for table in ["users", "policies", "claims", "fraud_checks", "risk_profiles", "renewal_history", "role_requests", "audit_logs"]:
             c.execute(f"UPDATE {table} SET tenant_id = ? WHERE tenant_id IS NULL", (DEFAULT_TENANT_ID,))
 
         seed_default_users(conn)
@@ -594,8 +615,36 @@ def _init_pg():
             END $$;
         """)
 
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id          UUID PRIMARY KEY,
+                user_id     TEXT,
+                tenant_id   UUID REFERENCES tenants(id),
+                action      TEXT NOT NULL,
+                entity      TEXT,
+                entity_id   TEXT,
+                details     JSONB,
+                ip_address  TEXT,
+                user_agent  TEXT,
+                status      TEXT DEFAULT 'success',
+                created_at  TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE audit_logs ADD COLUMN tenant_id UUID REFERENCES tenants(id);
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$;
+        """)
+        
+        # Create indexes
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_tenant ON audit_logs(tenant_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at DESC)")
+
         # Backfill: set default tenant on any rows missing tenant_id
-        for table in ["users", "policies", "claims", "fraud_checks", "risk_profiles", "renewal_history", "role_requests"]:
+        for table in ["users", "policies", "claims", "fraud_checks", "risk_profiles", "renewal_history", "role_requests", "audit_logs"]:
             cur.execute(f"UPDATE {table} SET tenant_id = %s WHERE tenant_id IS NULL", (DEFAULT_TENANT_ID,))
 
         seed_default_users(_PgConnWrapper(conn))

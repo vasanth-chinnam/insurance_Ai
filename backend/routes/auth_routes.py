@@ -10,6 +10,7 @@ from backend.auth import create_token, get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
+from backend.services.audit import log_action, AuditAction
 
 class GoogleAuthRequest(BaseModel):
     credential: str
@@ -79,6 +80,17 @@ def google_auth(req_body: GoogleAuthRequest, req: Request):
             )
             logger.info("Created new user via Google Sign-In: %s (%s)", name, email)
 
+    log_action(
+        action     = AuditAction.GOOGLE_AUTH,
+        user_id    = user_id,
+        tenant_id  = user_tenant_id,
+        entity     = "user",
+        entity_id  = user_id,
+        details    = {"email": email, "is_new_user": not bool(row)},
+        ip_address = getattr(req, "client", None).host if getattr(req, "client", None) else None,
+        user_agent = getattr(req, "headers", {}).get("user-agent", "") if hasattr(getattr(req, "headers", {}), "get") else "",
+    )
+
     token = create_token(user_id, email, role, user_tenant_id)
     return {
         "token": token,
@@ -106,6 +118,13 @@ def login(req_body: LoginRequest, req: Request):
             row = c.fetchone()
 
         if not row or row["password_hash"] != password_hash:
+            log_action(
+                action     = AuditAction.FAILED_LOGIN,
+                details    = {"attempted_email": email},
+                ip_address = getattr(req, "client", None).host if getattr(req, "client", None) else None,
+                user_agent = getattr(req, "headers", {}).get("user-agent", "") if hasattr(getattr(req, "headers", {}), "get") else "",
+                status     = "failed"
+            )
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
         user_id = row["user_id"]
@@ -113,6 +132,17 @@ def login(req_body: LoginRequest, req: Request):
         email_val = row["email"] or email
         role = row["role"] if "role" in row and row["role"] else "customer"
         user_tenant_id = row["tenant_id"] if "tenant_id" in row and row["tenant_id"] else tenant_id
+
+    log_action(
+        action     = AuditAction.LOGIN,
+        user_id    = user_id,
+        tenant_id  = user_tenant_id,
+        entity     = "user",
+        entity_id  = user_id,
+        details    = {"email": email_val},
+        ip_address = getattr(req, "client", None).host if getattr(req, "client", None) else None,
+        user_agent = getattr(req, "headers", {}).get("user-agent", "") if hasattr(getattr(req, "headers", {}), "get") else "",
+    )
 
     token = create_token(user_id, email_val, role, user_tenant_id)
     return {
@@ -161,6 +191,17 @@ def register(req_body: RegisterRequest, req: Request):
                 "pending", tenant_id
             ))
             logger.info("Created pending role request %s for user %s to role %s", req_id, user_id, req_body.requested_role)
+
+        log_action(
+            action     = AuditAction.REGISTER,
+            user_id    = user_id,
+            tenant_id  = tenant_id,
+            entity     = "user",
+            entity_id  = user_id,
+            details    = {"email": email, "requested_role": req_body.requested_role or "customer"},
+            ip_address = getattr(req, "client", None).host if getattr(req, "client", None) else None,
+            user_agent = getattr(req, "headers", {}).get("user-agent", "") if hasattr(getattr(req, "headers", {}), "get") else "",
+        )
 
         logger.info("Registered new user: %s (%s)", name, email)
 
@@ -247,6 +288,15 @@ def create_role_request(
             req_body.license_number or "", req_body.additional_info or "",
             "pending", tenant_id
         ))
+        
+    log_action(
+        action    = "REQUEST_ROLE_UPGRADE",
+        user_id   = user_id,
+        tenant_id = tenant_id,
+        entity    = "role_request",
+        entity_id = req_id,
+        details   = {"requested_role": req_body.requested_role},
+    )
         
     return {"message": "Role upgrade request submitted successfully"}
 

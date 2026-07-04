@@ -20,6 +20,7 @@ export const ROLE_NAV = {
     "fraud_detection",
     "risk_profiler",
     "agent_automation",
+    "audit_logs",
   ],
   manager: [
     "policy_qa",
@@ -30,6 +31,7 @@ export const ROLE_NAV = {
     "renewal_compare",
     "agent_automation",
     "analytics",
+    "audit_logs",
   ],
   admin: [
     "policy_qa",

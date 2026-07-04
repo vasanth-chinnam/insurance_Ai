@@ -329,7 +329,7 @@ function App() {
         )}
 
         {activeNav === 'audit_logs' && (
-          <ProtectedRoute role={user?.role} allowedRoles={['admin']}>
+          <ProtectedRoute role={user?.role} allowedRoles={['fraud_investigator', 'manager', 'admin']}>
             <AuditLogs />
           </ProtectedRoute>
         )}

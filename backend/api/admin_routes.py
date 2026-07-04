@@ -1,9 +1,10 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from backend.middleware.rbac import require_admin, require_admin_or_manager
 from backend.auth import get_current_user
 from backend.db import get_conn, DEFAULT_TENANT_ID
+from backend.services.audit import log_action, AuditAction
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -34,6 +35,7 @@ def list_users(current_user: dict = Depends(require_admin_or_manager)):
 def update_user_role(
     request: UpdateRoleRequest,
     current_user: dict = Depends(require_admin),
+    req: Request = None,
 ):
     """Admin only — change a user's role."""
     if request.role not in VALID_ROLES:
@@ -58,6 +60,16 @@ def update_user_role(
             check = conn.execute("SELECT 1 FROM users WHERE user_id = ? AND tenant_id = ?", (request.user_id, tenant_id)).fetchone()
             if not check:
                 raise HTTPException(status_code=404, detail="User not found")
+
+    log_action(
+        action    = AuditAction.UPDATE_ROLE,
+        user_id   = current_user["user_id"],
+        tenant_id = tenant_id,
+        entity    = "user",
+        entity_id = request.user_id,
+        details   = {"new_role": request.role},
+        ip_address = getattr(req, "client", None).host if getattr(req, "client", None) else None,
+    )
 
     logger.info("Role updated: %s → %s by %s",
                 request.user_id, request.role, current_user["user_id"])
@@ -103,6 +115,7 @@ def handle_role_request(
     request_id: str,
     body: RoleRequestAction,
     current_user: dict = Depends(require_admin),
+    req: Request = None,
 ):
     """Admin only — approve or reject a role request."""
     action = body.action.strip().lower()
@@ -148,5 +161,16 @@ def handle_role_request(
         else:
             logger.info("Rejected role request %s: User %s rejected for role %s by Admin %s",
                         request_id, target_user_id, requested_role, current_user["user_id"])
+            
+    audit_action = AuditAction.APPROVE_ROLE_REQUEST if action == "approve" else AuditAction.REJECT_ROLE_REQUEST
+    log_action(
+        action    = audit_action,
+        user_id   = current_user["user_id"],
+        tenant_id = tenant_id,
+        entity    = "role_request",
+        entity_id = request_id,
+        details   = {"target_user_id": target_user_id, "requested_role": requested_role},
+        ip_address = getattr(req, "client", None).host if getattr(req, "client", None) else None,
+    )
                         
     return {"message": f"Role request has been {new_status}"}
